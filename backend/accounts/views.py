@@ -13,7 +13,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .serializers import CurrentUserSerializer, LoginSerializer
+from .serializers import CurrentUserSerializer, LoginSerializer, ProfileSerializer
 
 
 @method_decorator(csrf_protect, name="dispatch")
@@ -80,3 +80,24 @@ class ChangePasswordView(APIView):
         # Đổi mật khẩu làm session hash lệch -> giữ đăng nhập cho chính phiên này.
         django_login(request, request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProfileView(APIView):
+    """Hồ sơ của chính người đang đăng nhập.
+
+    `GET` trả cả cơ sở đang thuộc về, nhưng `PATCH` không nhận field `house`:
+    ai thuộc cơ sở nào là quyết định tổ chức, không phải tùy chọn cá nhân.
+    Muốn đổi thì sửa bản ghi `Teacher` — việc của quản trị viên.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(ProfileSerializer(request.user).data)
+
+    def patch(self, request):
+        serializer = ProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        # Đọc lại từ instance đã lưu để trả về đúng cả Person vừa được tạo.
+        return Response(ProfileSerializer(request.user).data)
