@@ -62,6 +62,35 @@ cd frontend && npm install && npm run dev
 Mở http://localhost:8000 — Django render `templates/index.html`, `django-vite` trỏ thẻ
 `<script>` về Vite ở cổng 5173. Sửa file `.vue` thấy hot-reload ngay.
 
+### Dữ liệu mẫu
+
+```bash
+docker compose -f docker-compose.dev.yml exec web python manage.py seed_demo
+```
+
+Dựng cơ sở, biểu phí, 12 học sinh kèm phụ huynh và ba tài khoản đăng nhập:
+
+| Tài khoản | Mật khẩu | Vai trò |
+| --- | --- | --- |
+| `colan`, `thaynam` | `hocphi123!` | Giáo viên — toàn quyền trong cơ sở |
+| `phuhuynh` | `hocphi123!` | Phụ huynh — chỉ đọc, chỉ thấy con mình |
+
+| Tùy chọn | Việc |
+| --- | --- |
+| `--students N` | Số học sinh, tối đa 30 |
+| `--invoices` | Sinh luôn hóa đơn kỳ hiện tại |
+| `--password` | Mật khẩu khác cho tài khoản mẫu |
+| `--reset` | Xóa sạch cơ sở mẫu rồi tạo lại |
+| `--force` | Cho chạy khi `DEBUG=False` |
+
+Idempotent như `generate_invoices` — chạy lại không nhân đôi. Hai chi tiết cố ý:
+
+- **Mật khẩu chỉ đặt cho tài khoản mới.** Chạy lại không reset mật khẩu của tài khoản
+  đang dùng, và không cướp liên kết `Person` của user đã trỏ vào người khác.
+- **`--force` không mở khóa `--reset`.** Đây là app quản lý tiền: đổ dữ liệu giả vào DB
+  thật còn cứu được, xóa dữ liệu thật thì không. `--reset` chỉ chạy khi `DEBUG=True`,
+  không có cách ghi đè.
+
 Tạo tài khoản quản trị:
 
 ```bash
@@ -227,6 +256,7 @@ lọc, trả 403 sẽ tiết lộ rằng nó tồn tại.
 
 - [x] Đăng nhập/đăng xuất + guard ở `router`
 - [x] `serializers.py` + `urls.py` cho app `people`, màn hình Học sinh
+- [x] Lệnh `seed_demo` dựng dữ liệu mẫu
 - [ ] `serializers.py` + `urls.py` cho `billing`, `payments`, `notifications`
       (hiện `urlpatterns = []`)
 - [ ] Endpoint webhook SePay + xác thực `webhook_secret`
