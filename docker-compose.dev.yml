@@ -1,0 +1,41 @@
+# Dev trên máy cá nhân: Postgres + Django runserver trong Docker,
+# Vite dev server chạy trên host (`cd frontend && npm run dev`).
+#
+#   docker compose -f docker-compose.dev.yml up
+#
+services:
+  db:
+    image: postgres:16-alpine
+    env_file: .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    env_file: .env
+    environment:
+      DJANGO_DEBUG: "True"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0"
+      POSTGRES_HOST: db
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      # django-vite ở dev_mode chỉ sinh URL trỏ về Vite, không đọc dist —
+      # nhưng mount sẵn để `collectstatic` thử nghiệm cũng chạy được.
+      - ./frontend/dist:/frontend/dist
+
+volumes:
+  pgdata_dev:

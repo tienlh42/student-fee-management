@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@import "primeicons/primeicons.css";
+
+/* PrimeVue được đăng ký ở layer `primevue` (xem main.js) nên utility class của
+   Tailwind luôn thắng khi ghi đè style component. */
+@layer theme, base, primevue, components, utilities;
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+}
