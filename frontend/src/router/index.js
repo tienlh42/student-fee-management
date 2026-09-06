@@ -21,6 +21,13 @@ const routes = [
     component: () => import("../views/DashboardView.vue"),
   },
   {
+    path: "/profile",
+    name: "profile",
+    // Không có route /profile/:id — hồ sơ luôn là của chính người đang đăng nhập.
+    meta: { title: "Hồ sơ cá nhân" },
+    component: () => import("../views/ProfileView.vue"),
+  },
+  {
     path: "/students",
     name: "students",
     meta: { title: "Học sinh" },

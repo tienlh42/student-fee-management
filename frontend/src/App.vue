@@ -55,6 +55,18 @@ const initials = computed(() =>
 const userMenuItems = computed(() => [
   { label: auth.user?.username ?? "", disabled: true },
   { separator: true },
+  {
+    label: "Hồ sơ cá nhân",
+    icon: "pi pi-user-edit",
+    command: () => router.push("/profile"),
+  },
+  {
+    label: "Quản trị Django",
+    icon: "pi pi-external-link",
+    visible: auth.role.is_staff_admin,
+    command: () => window.open("/admin/", "_blank", "noopener"),
+  },
+  { separator: true },
   { label: "Đăng xuất", icon: "pi pi-sign-out", command: signOut },
 ]);
 
