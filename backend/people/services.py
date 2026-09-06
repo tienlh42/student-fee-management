@@ -132,3 +132,49 @@ def link_guardian(
             is_primary_contact=False
         )
     return link
+
+
+def houses_of(user) -> list[dict]:
+    """Cơ sở mà user gắn với, kèm lý do gắn — dùng cho màn hình hồ sơ cá nhân.
+
+    Ba đường khác nhau nên không gộp được vào một query: admin thấy tất cả,
+    teacher qua bản ghi Teacher, guardian qua các học sinh mình đỡ đầu.
+    """
+    from tenancy.models import House
+
+    role = role_for(user)
+    if role.is_staff_admin:
+        return [
+            {"id": h.id, "name": h.name, "via": "admin", "via_display": "Quản trị"}
+            for h in House.objects.all()
+        ]
+
+    person_id = getattr(user, "person_id", None)
+    if person_id is None:
+        return []
+
+    entries: dict[int, dict] = {}
+    for teacher in Teacher.objects.filter(person_id=person_id).select_related("house"):
+        entries[teacher.house_id] = {
+            "id": teacher.house_id,
+            "name": teacher.house.name,
+            "via": "teacher",
+            "via_display": "Giáo viên",
+        }
+
+    if role.is_guardian:
+        children = Student.objects.filter(
+            guardian_links__guardian_id=person_id
+        ).select_related("house")
+        for student in children:
+            entries.setdefault(
+                student.house_id,
+                {
+                    "id": student.house_id,
+                    "name": student.house.name,
+                    "via": "guardian",
+                    "via_display": "Phụ huynh",
+                },
+            )
+
+    return sorted(entries.values(), key=lambda entry: entry["name"])
