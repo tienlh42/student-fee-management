@@ -1,4 +1,4 @@
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from .services import role_for
 
@@ -16,3 +16,19 @@ class CanSeeBankData(BasePermission):
 
     def has_permission(self, request, view):
         return role_for(request.user).can_see_bank_data
+
+
+class IsTeacherOrReadOnly(BasePermission):
+    """Guardian chỉ đọc; mọi thao tác ghi đòi Teacher (hoặc staff admin).
+
+    Phạm vi *dòng dữ liệu* nào được đọc vẫn do queryset của view giới hạn
+    (`people.services.accessible_students`) — permission này chỉ chặn theo động từ.
+    """
+
+    message = "Chỉ giáo viên mới được thay đổi dữ liệu này."
+
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+        role = role_for(request.user)
+        return role.is_teacher or role.is_staff_admin

@@ -1,8 +1,19 @@
 import { createRouter, createWebHistory } from "vue-router";
 
+import { useAuthStore } from "@/stores/auth";
+
 // Django trả index.html cho mọi route non-API, nên history mode chạy được
 // mà không cần cấu hình rewrite riêng.
+//
+// `meta.public`: route xem được khi chưa đăng nhập (chỉ /login).
+// `meta.requiresEdit`: route chỉ dành cho teacher — guardian bị đẩy về /.
 const routes = [
+  {
+    path: "/login",
+    name: "login",
+    meta: { title: "Đăng nhập", public: true, blank: true },
+    component: () => import("../views/LoginView.vue"),
+  },
   {
     path: "/",
     name: "dashboard",
@@ -13,7 +24,7 @@ const routes = [
     path: "/students",
     name: "students",
     meta: { title: "Học sinh" },
-    component: () => import("../views/PlaceholderView.vue"),
+    component: () => import("../views/StudentsView.vue"),
   },
   {
     path: "/invoices",
@@ -24,7 +35,8 @@ const routes = [
   {
     path: "/transactions",
     name: "transactions",
-    meta: { title: "Đối soát tiền vào" },
+    // Guardian không bao giờ được thấy dữ liệu ngân hàng (xem README § Phân quyền).
+    meta: { title: "Đối soát tiền vào", requiresBankData: true },
     component: () => import("../views/PlaceholderView.vue"),
   },
   {
@@ -41,7 +53,34 @@ const routes = [
   },
 ];
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(),
   routes,
 });
+
+router.beforeEach(async (to) => {
+  const auth = useAuthStore();
+  // Guard chỉ là trải nghiệm người dùng — quyền thật do backend quyết định.
+  // Vẫn phải chờ /me để tránh chớp màn hình login khi F5 lúc đang đăng nhập.
+  await auth.ensureResolved();
+
+  if (to.meta.public) {
+    return auth.isAuthenticated ? { path: "/" } : true;
+  }
+
+  if (!auth.isAuthenticated) {
+    return { path: "/login", query: to.fullPath === "/" ? {} : { redirect: to.fullPath } };
+  }
+
+  if (to.meta.requiresBankData && !auth.role.can_see_bank_data) {
+    return { path: "/" };
+  }
+
+  return true;
+});
+
+router.afterEach((to) => {
+  document.title = to.meta.title ? `${to.meta.title} · Quản lý học phí` : "Quản lý học phí";
+});
+
+export default router;

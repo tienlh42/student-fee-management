@@ -44,3 +44,26 @@ export const api = {
   put: (path, body, options) => request(path, { ...options, method: "PUT", body }),
   delete: (path, options) => request(path, { ...options, method: "DELETE" }),
 };
+
+/** Gom lỗi DRF (`{field: [msg]}`, `{detail: msg}`) thành một chuỗi hiển thị được. */
+export function errorMessage(error, fallback = "Có lỗi xảy ra, vui lòng thử lại.") {
+  const payload = error?.payload;
+  if (!payload) return fallback;
+  if (typeof payload === "string") return payload;
+  if (payload.detail) return payload.detail;
+
+  const parts = Object.values(payload).flat().filter((v) => typeof v === "string");
+  return parts.length ? parts.join(" ") : fallback;
+}
+
+/** Lỗi theo từng field, để gắn vào input trong form. */
+export function fieldErrors(error) {
+  const payload = error?.payload;
+  if (!payload || typeof payload !== "object") return {};
+
+  return Object.fromEntries(
+    Object.entries(payload)
+      .filter(([key]) => key !== "detail")
+      .map(([key, value]) => [key, Array.isArray(value) ? value.join(" ") : String(value)]),
+  );
+}

@@ -71,6 +71,21 @@ docker compose -f docker-compose.dev.yml exec web python manage.py createsuperus
 Django admin ở http://localhost:8000/admin/ — đã đăng ký đầy đủ 6 app, đủ dùng để nhập
 liệu và kiểm thử nghiệp vụ trước khi có màn hình Vue thật.
 
+### Kết nối DB bằng GUI (DBeaver / extension PostgreSQL của VS Code)
+
+`docker-compose.dev.yml` expose cổng 5432 ra host, nên client kết nối thẳng:
+
+| Trường | Giá trị |
+| --- | --- |
+| Host | `localhost` |
+| Port | `5432` |
+| Database | `hocphi` |
+| User | `hocphi_user` |
+| Password | `changeme` (theo `.env`) |
+
+`docker-compose.yml` (prod) **cố tình không** expose 5432 — trên VPS chỉ vào DB qua
+`docker compose exec db psql -U hocphi_user hocphi`, không mở cổng ra internet.
+
 ### Migrations & test
 
 ```bash
@@ -135,14 +150,90 @@ Secrets cần tạo: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`.
 15 2 * * * /opt/student-fee-manager/scripts/backup_db.sh >> /var/log/hocphi-backup.log 2>&1
 ```
 
+## Đăng nhập & phân quyền trên API
+
+Session auth cùng origin — không JWT, không lưu token ở `localStorage`.
+
+| Endpoint | Việc |
+| --- | --- |
+| `POST /api/accounts/login/` | Đăng nhập, trả về user + `role` |
+| `POST /api/accounts/logout/` | Đăng xuất |
+| `GET /api/accounts/me/` | Trạng thái đăng nhập; **đồng thời set cookie `csrftoken`** |
+| `POST /api/accounts/change-password/` | Đổi mật khẩu |
+
+`GET /api/accounts/me/` trả `200 {"authenticated": false}` khi chưa đăng nhập chứ không
+trả 401 — router guard chỉ cần biết trạng thái, 401 sẽ làm console đầy lỗi giả.
+
+**Hai chỗ dễ sai về CSRF**, đã có test chốt trong `people/tests.py`:
+
+1. DRF bọc `csrf_exempt` quanh mọi `APIView`, còn `SessionAuthentication` chỉ kiểm CSRF
+   với request **đã** đăng nhập. Login là request chưa đăng nhập → phải tự gắn
+   `@csrf_protect`, nếu không endpoint hở CSRF.
+2. `django_login()` gọi `rotate_token()` → token cũ hết hiệu lực ngay sau khi đăng nhập.
+   Client phải đọc lại cookie cho mỗi request ghi (`frontend/src/api/client.js` đã làm vậy).
+
+### Ba lớp chặn quyền, không lớp nào thay được lớp nào
+
+| Lớp | Ở đâu | Chặn gì |
+| --- | --- | --- |
+| Xác thực | `IsAuthenticated` | Khách vãng lai |
+| Động từ | `accounts.permissions.IsTeacherOrReadOnly` | Guardian ghi dữ liệu |
+| Cơ sở | `people.permissions.WritableWithinOwnHouse` | Teacher cơ sở A sửa bản ghi cơ sở B |
+| Dòng dữ liệu | `people.services.accessible_students` (queryset) | Đọc bản ghi ngoài phạm vi |
+
+> Khai báo `permission_classes` ở view **thay thế** `DEFAULT_PERMISSION_CLASSES` chứ không
+> cộng dồn. Bỏ quên `IsAuthenticated` trong danh sách là khách vãng lai GET được — đúng
+> lỗi này đã xảy ra một lần, nay có `test_anonymous_is_rejected` giữ.
+
+Guard ở `frontend/src/router/index.js` chỉ để tránh chớp màn hình sai — **quyền thật luôn
+do backend quyết định**. Ẩn nút trên UI không phải là bảo mật.
+
+## API app `people`
+
+`DefaultRouter` ở `people/urls.py`, tất cả dưới `/api/people/`:
+
+| Route | Ghi chú |
+| --- | --- |
+| `students/` | CRUD; `?search=`, `?status=`, `?class_grade=`, `?house=`, `?page_size=` |
+| `students/meta/` | Toàn bộ dropdown cho form + filter trong **một** request |
+| `students/{id}/guardians/` | `GET` liệt kê, `POST` gắn (idempotent) |
+| `students/{id}/guardians/{guardian_id}/` | `DELETE` gỡ liên kết |
+| `guardians/`, `teachers/`, `assignments/` | CRUD |
+
+`Student`/`Teacher`/`Guardian` đều lấy `person_id` làm khóa chính, nên `person` luôn là
+object **lồng và ghi được** — không thể tạo vai trò trước khi có `Person`. Serializer
+phơi `person_id` ra dưới tên `id` để frontend dùng làm `data-key` cho DataTable.
+
+Sửa học sinh của cơ sở khác trả **404 chứ không phải 403**: bản ghi nằm ngoài queryset đã
+lọc, trả 403 sẽ tiết lộ rằng nó tồn tại.
+
+## Frontend
+
+| File | Việc |
+| --- | --- |
+| `stores/auth.js` | User + role, `ensureResolved()` cho router guard |
+| `api/client.js` | `fetch` + CSRF, `errorMessage()` / `fieldErrors()` gom lỗi DRF |
+| `api/people.js` | Bọc endpoint, view không tự ghép query string |
+| `views/LoginView.vue` | Form đăng nhập, hỗ trợ `?redirect=` |
+| `views/StudentsView.vue` | DataTable lazy + filter + phân trang server-side |
+| `components/StudentFormDialog.vue` | Form thêm/sửa, `person` lồng |
+| `components/StudentGuardiansDialog.vue` | Gắn/gỡ phụ huynh, tạo nhanh phụ huynh mới |
+| `utils/date.js` | `Date` ↔ `"YYYY-MM-DD"` |
+
+> `utils/date.js` **không** dùng `toISOString()`: hàm đó quy về UTC nên ở múi giờ +07 sẽ
+> lùi ngày sinh đi một ngày.
+
 ## Việc còn lại
 
-- [ ] `serializers.py` + `urls.py` cho từng app (hiện `urlpatterns = []`)
+- [x] Đăng nhập/đăng xuất + guard ở `router`
+- [x] `serializers.py` + `urls.py` cho app `people`, màn hình Học sinh
+- [ ] `serializers.py` + `urls.py` cho `billing`, `payments`, `notifications`
+      (hiện `urlpatterns = []`)
 - [ ] Endpoint webhook SePay + xác thực `webhook_secret`
 - [ ] Sinh ảnh VietQR — `payments/services.py:build_vietqr_url` đang trả `None`:
       VietQR cần **số tài khoản đầy đủ**, mà `BankAccount` cố tình chỉ lưu 4 số cuối.
       Cần chốt nơi lưu số đầy đủ (biến môi trường, hay field mã hóa riêng) trước khi làm.
 - [ ] Mã hóa thật cho `api_key_encrypted` / `access_token_encrypted` — hiện chỉ là
       `TextField`, tên field mô tả ý định chứ chưa có cơ chế mã hóa
-- [ ] Thay các màn hình placeholder trong `frontend/src/views/` bằng PrimeVue DataTable
-- [ ] Màn hình đăng nhập + `LoginRequiredMiddleware` hoặc guard ở `router`
+- [ ] Thay 3 màn hình placeholder còn lại (Hóa đơn, Đối soát, Thông báo)
+- [ ] Màn hình đổi mật khẩu (API `change-password/` đã có, UI chưa)
