@@ -6,8 +6,10 @@ với schema nhân khẩu học.
 
 from django.db import models
 
+from core.models import TimeStampedModel
 
-class Notification(models.Model):
+
+class Notification(TimeStampedModel):
     class Category(models.TextChoices):
         LICH_NGHI = "lich_nghi", "Lịch nghỉ"
         SU_KIEN = "su_kien", "Sự kiện"
@@ -37,7 +39,6 @@ class Notification(models.Model):
     published_at = models.DateTimeField(
         "Thời điểm đăng", null=True, blank=True, help_text="Bỏ trống = còn là nháp."
     )
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Thông báo"

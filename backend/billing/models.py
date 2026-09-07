@@ -8,8 +8,10 @@ from decimal import Decimal
 from django.core.validators import MinValueValidator
 from django.db import models
 
+from core.models import CreatedAtModel, TimeStampedModel
 
-class FeeItem(models.Model):
+
+class FeeItem(TimeStampedModel):
     """Một khoản thu đơn lẻ: học phí, tiền ăn, phí xe..."""
 
     class Category(models.TextChoices):
@@ -35,7 +37,7 @@ class FeeItem(models.Model):
         return self.name
 
 
-class FeePackage(models.Model):
+class FeePackage(TimeStampedModel):
     """Gói phí gộp nhiều khoản thu, gắn kỳ hạn đóng."""
 
     class BillingTiming(models.TextChoices):
@@ -73,7 +75,7 @@ class FeePackage(models.Model):
         return self.name
 
 
-class FeePackageItem(models.Model):
+class FeePackageItem(TimeStampedModel):
     fee_package = models.ForeignKey(FeePackage, on_delete=models.CASCADE, related_name="items")
     fee_item = models.ForeignKey(FeeItem, on_delete=models.PROTECT, related_name="package_links")
     amount = models.DecimalField(
@@ -98,7 +100,7 @@ class FeePackageItem(models.Model):
         return f"{self.fee_package} / {self.fee_item}"
 
 
-class StudentFeePackage(models.Model):
+class StudentFeePackage(TimeStampedModel):
     """Học sinh đăng ký gói phí trong một khoảng thời gian."""
 
     student = models.ForeignKey(
@@ -120,7 +122,7 @@ class StudentFeePackage(models.Model):
         return f"{self.student} · {self.fee_package}"
 
 
-class StudentDiscount(models.Model):
+class StudentDiscount(TimeStampedModel):
     """Giảm trừ: học bổng, giảm giá anh em ruột..."""
 
     class DiscountType(models.TextChoices):
@@ -156,7 +158,7 @@ class StudentDiscount(models.Model):
         return f"{self.name} · {self.student}"
 
 
-class Invoice(models.Model):
+class Invoice(TimeStampedModel):
     class Status(models.TextChoices):
         DRAFT = "draft", "Nháp"
         ISSUED = "issued", "Đã phát hành"
@@ -185,8 +187,6 @@ class Invoice(models.Model):
         unique=True,
         help_text="Chuỗi xuất hiện trong nội dung chuyển khoản, dùng để tự khớp giao dịch.",
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Hóa đơn"
@@ -225,7 +225,7 @@ class Invoice(models.Model):
         return self.net_amount - self.paid_amount + self.refunded_amount
 
 
-class InvoiceItem(models.Model):
+class InvoiceItem(TimeStampedModel):
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="items")
     fee_item = models.ForeignKey(
         FeeItem, on_delete=models.SET_NULL, null=True, blank=True, related_name="invoice_items"
@@ -244,7 +244,7 @@ class InvoiceItem(models.Model):
         return f"{self.fee_item_name_snapshot}: {self.amount}"
 
 
-class Refund(models.Model):
+class Refund(CreatedAtModel):
     invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name="refunds")
     amount = models.DecimalField("Số tiền hoàn", max_digits=12, decimal_places=2)
     reason = models.CharField("Lý do", max_length=500, blank=True)

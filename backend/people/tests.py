@@ -288,6 +288,23 @@ class StudentApiTests(PeopleFixtureMixin, TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_delete_is_soft_and_hides_from_list(self):
+        """DELETE qua API không xóa hàng thật — Invoice/Payment cũ vẫn còn liên kết được."""
+        self.client.force_authenticate(self.teacher_user)
+        student_id = self.student_a.pk
+
+        response = self.client.delete(f"/api/people/students/{student_id}/")
+        self.assertEqual(response.status_code, 204)
+
+        self.assertFalse(Student.objects.filter(pk=student_id).exists())
+        restored = Student.all_objects.get(pk=student_id)
+        self.assertTrue(restored.is_deleted)
+        self.assertIsNotNone(restored.deleted_at)
+
+        response = self.client.get("/api/people/students/")
+        names = [row["full_name"] for row in response.data["results"]]
+        self.assertNotIn("Học sinh A", names)
+
     def test_enrolled_date_roundtrips(self):
         self.student_a.enrolled_date = date(2026, 9, 1)
         self.student_a.save()

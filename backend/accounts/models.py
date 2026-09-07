@@ -1,6 +1,8 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from core.models import TimeStampedModel
+
 
 class User(AbstractUser):
     """Custom user. AUTH_USER_MODEL phải trỏ vào đây trước lần migrate đầu tiên."""
@@ -22,7 +24,7 @@ class User(AbstractUser):
         return self.get_full_name() or self.username
 
 
-class UserOAuthAccount(models.Model):
+class UserOAuthAccount(TimeStampedModel):
     class Provider(models.TextChoices):
         GOOGLE = "google", "Google"
         FACEBOOK = "facebook", "Facebook"
@@ -32,7 +34,6 @@ class UserOAuthAccount(models.Model):
     provider = models.CharField(max_length=20, choices=Provider.choices)
     provider_uid = models.CharField(max_length=255)
     access_token_encrypted = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Liên kết OAuth"

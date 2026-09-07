@@ -131,7 +131,7 @@ def _refresh_transaction_status(incoming: IncomingTransaction) -> None:
         incoming.status = IncomingTransaction.Status.PARTIALLY_MATCHED
     else:
         incoming.status = IncomingTransaction.Status.UNMATCHED
-    incoming.save(update_fields=["status"])
+    incoming.save(update_fields=["status", "updated_at"])
 
 
 def build_vietqr_url(invoice: Invoice) -> str | None:

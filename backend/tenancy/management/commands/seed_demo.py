@@ -195,12 +195,17 @@ class Command(BaseCommand):
 
             # Person của học sinh/giáo viên/phụ huynh xóa theo cascade từ vai trò,
             # nên xóa vai trò trước rồi mới dọn Person mồ côi.
+            #
+            # Student/Teacher/Guardian có soft delete (xem core.models) — .objects
+            # ẩn bản ghi đã xóa nên không tái sử dụng được person_id của nó.
+            # --reset là dọn sạch dữ liệu demo thật sự, phải xóa cứng qua
+            # all_objects, không thì lần seed lại sẽ đụng unique constraint.
             person_ids = student_ids + list(
                 Teacher.objects.filter(house=house).values_list("person_id", flat=True)
             )
-            Student.objects.filter(person_id__in=student_ids).delete()
-            Teacher.objects.filter(house=house).delete()
-            Guardian.objects.filter(student_links__isnull=True).delete()
+            Student.all_objects.filter(person_id__in=student_ids).delete()
+            Teacher.all_objects.filter(house=house).delete()
+            Guardian.all_objects.filter(student_links__isnull=True).delete()
 
             User.objects.filter(person_id__in=person_ids).delete()
             Person.objects.filter(id__in=person_ids).delete()

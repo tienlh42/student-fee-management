@@ -33,7 +33,7 @@ def visible_notifications(user) -> QuerySet[Notification]:
 def publish(notification: Notification) -> Notification:
     if notification.published_at is None:
         notification.published_at = timezone.now()
-        notification.save(update_fields=["published_at"])
+        notification.save(update_fields=["published_at", "updated_at"])
     return notification
 
 

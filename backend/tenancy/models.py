@@ -1,7 +1,9 @@
 from django.db import models
 
+from core.models import TimeStampedModel
 
-class House(models.Model):
+
+class House(TimeStampedModel):
     """Một hộ kinh doanh / cơ sở. Hầu hết model khác đều FK về đây."""
 
     name = models.CharField("Tên cơ sở", max_length=255)
@@ -12,8 +14,6 @@ class House(models.Model):
         unique=True,
         help_text="Dùng cho địa chỉ nhận mail/webhook riêng của cơ sở.",
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Cơ sở"

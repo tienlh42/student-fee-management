@@ -6,8 +6,10 @@ API bên thứ ba (SePay). Guardian KHÔNG BAO GIỜ được đọc dữ liệu
 
 from django.db import models
 
+from core.models import CreatedAtModel, TimeStampedModel
 
-class BankAccount(models.Model):
+
+class BankAccount(TimeStampedModel):
     house = models.OneToOneField(
         "tenancy.House", on_delete=models.CASCADE, related_name="bank_account"
     )
@@ -26,7 +28,7 @@ class BankAccount(models.Model):
         return f"{self.bank_code} ****{self.account_number_last4}"
 
 
-class BankIntegration(models.Model):
+class BankIntegration(TimeStampedModel):
     class Provider(models.TextChoices):
         SEPAY = "sepay", "SePay"
 
@@ -46,7 +48,7 @@ class BankIntegration(models.Model):
         return f"{self.get_provider_display()} · {self.house}"
 
 
-class IncomingTransaction(models.Model):
+class IncomingTransaction(TimeStampedModel):
     """Một giao dịch tiền vào, nhận qua webhook SePay."""
 
     class Status(models.TextChoices):
@@ -70,7 +72,6 @@ class IncomingTransaction(models.Model):
         help_text="Khóa chống ghi trùng khi webhook gửi lại.",
     )
     raw_payload = models.JSONField("Payload gốc", default=dict, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Giao dịch tiền vào"
@@ -93,7 +94,7 @@ class IncomingTransaction(models.Model):
         return self.amount - self.allocated_amount
 
 
-class Payment(models.Model):
+class Payment(CreatedAtModel):
     """Phân bổ tiền vào một hóa đơn. Một giao dịch có thể trả nhiều hóa đơn."""
 
     class Method(models.TextChoices):
@@ -132,7 +133,6 @@ class Payment(models.Model):
         help_text="Bắt buộc trên thực tế với thu tiền mặt — để truy trách nhiệm.",
     )
     note = models.CharField("Ghi chú", max_length=500, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Thanh toán"

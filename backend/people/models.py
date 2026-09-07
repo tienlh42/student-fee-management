@@ -1,7 +1,9 @@
 from django.db import models
 
+from core.models import SoftDeleteModel, TimeStampedModel
 
-class Person(models.Model):
+
+class Person(TimeStampedModel):
     """Thông tin định danh dùng chung cho Student / Teacher / Guardian."""
 
     class Gender(models.TextChoices):
@@ -26,9 +28,6 @@ class Person(models.Model):
     email = models.EmailField("Email", blank=True)
     avatar_url = models.URLField("Ảnh đại diện", max_length=500, blank=True)
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
     class Meta:
         verbose_name = "Nhân thân"
         verbose_name_plural = "Nhân thân"
@@ -42,8 +41,14 @@ class Person(models.Model):
         return self.full_name
 
 
-class Student(models.Model):
-    """Person đóng vai trò học sinh. person_id là khóa chính (1-1 với Person)."""
+class Student(TimeStampedModel, SoftDeleteModel):
+    """Person đóng vai trò học sinh. person_id là khóa chính (1-1 với Person).
+
+    Soft delete: học sinh nghỉ học có thể đã có hóa đơn/thanh toán — xóa thật
+    sẽ vướng `on_delete=PROTECT` từ Invoice, và dù không vướng cũng không nên
+    mất dấu. Xóa qua API luôn là soft delete; `all_objects` cho admin xem/khôi
+    phục học sinh đã xóa.
+    """
 
     class Status(models.TextChoices):
         ACTIVE = "active", "Đang học"
@@ -68,12 +73,13 @@ class Student(models.Model):
         verbose_name_plural = "Học sinh"
         ordering = ["person__full_name"]
         indexes = [models.Index(fields=["house", "status"])]
+        base_manager_name = "all_objects"  # cascade delete từ Person phải thấy cả bản ghi đã soft-delete
 
     def __str__(self) -> str:
         return self.person.full_name
 
 
-class Teacher(models.Model):
+class Teacher(TimeStampedModel, SoftDeleteModel):
     person = models.OneToOneField(
         Person, on_delete=models.CASCADE, primary_key=True, related_name="teacher"
     )
@@ -85,12 +91,13 @@ class Teacher(models.Model):
         verbose_name = "Giáo viên"
         verbose_name_plural = "Giáo viên"
         ordering = ["person__full_name"]
+        base_manager_name = "all_objects"
 
     def __str__(self) -> str:
         return self.person.full_name
 
 
-class Guardian(models.Model):
+class Guardian(TimeStampedModel, SoftDeleteModel):
     person = models.OneToOneField(
         Person, on_delete=models.CASCADE, primary_key=True, related_name="guardian"
     )
@@ -100,12 +107,13 @@ class Guardian(models.Model):
         verbose_name = "Phụ huynh"
         verbose_name_plural = "Phụ huynh"
         ordering = ["person__full_name"]
+        base_manager_name = "all_objects"
 
     def __str__(self) -> str:
         return self.person.full_name
 
 
-class StudentGuardian(models.Model):
+class StudentGuardian(TimeStampedModel):
     class Relationship(models.TextChoices):
         MOTHER = "mother", "Mẹ"
         FATHER = "father", "Bố"
@@ -131,7 +139,7 @@ class StudentGuardian(models.Model):
         return f"{self.guardian} - {self.get_relationship_type_display()} của {self.student}"
 
 
-class TeachingAssignment(models.Model):
+class TeachingAssignment(TimeStampedModel):
     teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name="assignments")
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="assignments")
     is_primary = models.BooleanField("Giáo viên chính", default=False)
