@@ -47,11 +47,27 @@ Cần Docker Desktop và Node 20+. **Không cần cài Python trên máy** — b
 cp .env.example .env   # rồi sửa DJANGO_DEBUG=True, DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
 ```
 
+### Windows: script tự động
+
+`scripts/dev.ps1` (hoặc double-click `scripts/dev.bat`) tự tạo `.env` nếu thiếu, chờ
+Docker Desktop khởi động, `npm install` nếu thiếu `node_modules`, rồi mở backend và
+frontend mỗi bên một cửa sổ PowerShell riêng:
+
+```powershell
+.\scripts\dev.ps1            # mở 2 cửa sổ: docker compose up, npm run dev
+.\scripts\dev.ps1 -Seed      # như trên, sau đó chạy seed_demo
+.\scripts\dev.ps1 -NoNewWindows  # backend chạy nền (-d), frontend chạy ngay trong cửa sổ hiện tại
+```
+
 Terminal 1 — backend + Postgres:
 
 ```bash
 docker compose -f docker-compose.dev.yml up
 ```
+
+Container `web` tự chạy `migrate` trước `runserver` mỗi lần lên — không cần chạy tay
+sau khi pull code có migration mới (chỉ dev; `docker-compose.yml` prod migrate tay có
+chủ đích, xem phần Deploy).
 
 Terminal 2 — Vite dev server (chạy trên host, có HMR):
 

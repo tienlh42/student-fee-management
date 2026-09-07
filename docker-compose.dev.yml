@@ -36,6 +36,9 @@ services:
       # django-vite ở dev_mode chỉ sinh URL trỏ về Vite, không đọc dist —
       # nhưng mount sẵn để `collectstatic` thử nghiệm cũng chạy được.
       - ./frontend/dist:/frontend/dist
+    # Tự migrate mỗi lần lên container — chỉ dev, tránh quên chạy tay sau khi
+    # pull code có migration mới. Prod (docker-compose.yml) migrate tay có chủ đích.
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
 
 volumes:
   pgdata_dev:
