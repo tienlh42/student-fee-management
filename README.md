@@ -252,6 +252,24 @@ phơi `person_id` ra dưới tên `id` để frontend dùng làm `data-key` cho 
 Sửa học sinh của cơ sở khác trả **404 chứ không phải 403**: bản ghi nằm ngoài queryset đã
 lọc, trả 403 sẽ tiết lộ rằng nó tồn tại.
 
+## API app `billing`
+
+`DefaultRouter` ở `billing/urls.py`, tất cả dưới `/api/billing/`:
+
+| Route | Ghi chú |
+| --- | --- |
+| `fee-items/`, `fee-items/meta/` | CRUD khoản thu; chỉ teacher/staff đọc/ghi được (`accounts.permissions.IsTeacher`) |
+| `fee-packages/`, `fee-packages/meta/` | CRUD gói phí; `items` là mảng `{fee_item, amount}` lồng, ghi đè toàn bộ khi `PATCH` |
+| `student-fee-packages/` | CRUD đăng ký gói phí của học sinh |
+| `student-discounts/` | CRUD giảm trừ của học sinh |
+| `invoices/`, `invoices/meta/` | Chỉ đọc + `PATCH` (`adjustment_amount`/`adjustment_note`/`due_date`) — không tạo tay qua `POST` |
+| `invoices/generate/` | `POST {period: "YYYY-MM", student?, house?}` — gọi `billing.services.generate_invoice` cho từng học sinh đang học trong cơ sở *ghi* được của user, idempotent như lệnh `generate_invoices` |
+| `invoices/{id}/void/` | `POST` — chuyển hóa đơn sang trạng thái `void` |
+
+`FeeItem`/`FeePackage`/`StudentFeePackage`/`StudentDiscount` chặn hoàn toàn với guardian (không phải
+chỉ chặn ghi) — đây là cấu hình nội bộ, không phải dữ liệu con em. `Invoice` thì guardian vẫn đọc
+được (giới hạn qua `people.services.accessible_students`), chỉ không ghi được.
+
 ## Frontend
 
 | File | Việc |
@@ -263,7 +281,12 @@ lọc, trả 403 sẽ tiết lộ rằng nó tồn tại.
 | `views/StudentsView.vue` | DataTable lazy + filter + phân trang server-side |
 | `components/StudentFormDialog.vue` | Form thêm/sửa, `person` lồng |
 | `components/StudentGuardiansDialog.vue` | Gắn/gỡ phụ huynh, tạo nhanh phụ huynh mới |
+| `views/InvoicesView.vue` | 4 tab: Hóa đơn (DataTable lazy + sinh hóa đơn theo kỳ + hủy), Khoản thu, Gói phí (+ đăng ký học sinh), Giảm trừ |
+| `components/FeeItemFormDialog.vue`, `FeePackageFormDialog.vue` | Form thêm/sửa khoản thu, gói phí (gói phí sửa được cả danh sách khoản thu lồng bên trong) |
+| `components/StudentFeePackageFormDialog.vue`, `StudentDiscountFormDialog.vue` | Form đăng ký gói phí / gán giảm trừ cho một học sinh |
+| `components/InvoiceGenerateDialog.vue` | Form gọi `invoices/generate/` cho một kỳ (toàn bộ hoặc một học sinh) |
 | `utils/date.js` | `Date` ↔ `"YYYY-MM-DD"` |
+| `utils/money.js` | Định dạng tiền VNĐ, định dạng kỳ `"YYYY-MM-01"` → `"MM/YYYY"` |
 
 > `utils/date.js` **không** dùng `toISOString()`: hàm đó quy về UTC nên ở múi giờ +07 sẽ
 > lùi ngày sinh đi một ngày.
@@ -273,13 +296,16 @@ lọc, trả 403 sẽ tiết lộ rằng nó tồn tại.
 - [x] Đăng nhập/đăng xuất + guard ở `router`
 - [x] `serializers.py` + `urls.py` cho app `people`, màn hình Học sinh
 - [x] Lệnh `seed_demo` dựng dữ liệu mẫu
-- [ ] `serializers.py` + `urls.py` cho `billing`, `payments`, `notifications`
-      (hiện `urlpatterns = []`)
+- [x] `serializers.py` + `urls.py` cho `billing`, màn hình Hóa đơn (danh sách + sinh hóa đơn
+      theo kỳ + hủy) và form quản lý khoản thu/gói phí/đăng ký gói phí/giảm trừ cho teacher
+- [ ] `serializers.py` + `urls.py` cho `payments`, `notifications` (hiện `urlpatterns = []`)
 - [ ] Endpoint webhook SePay + xác thực `webhook_secret`
 - [ ] Sinh ảnh VietQR — `payments/services.py:build_vietqr_url` đang trả `None`:
       VietQR cần **số tài khoản đầy đủ**, mà `BankAccount` cố tình chỉ lưu 4 số cuối.
       Cần chốt nơi lưu số đầy đủ (biến môi trường, hay field mã hóa riêng) trước khi làm.
 - [ ] Mã hóa thật cho `api_key_encrypted` / `access_token_encrypted` — hiện chỉ là
       `TextField`, tên field mô tả ý định chứ chưa có cơ chế mã hóa
-- [ ] Thay 3 màn hình placeholder còn lại (Hóa đơn, Đối soát, Thông báo)
+- [ ] Thay 2 màn hình placeholder còn lại (Đối soát, Thông báo)
 - [ ] Màn hình đổi mật khẩu (API `change-password/` đã có, UI chưa)
+- [ ] Ghi nhận thanh toán (`Payment`) và hoàn tiền (`Refund`) chưa có UI — hiện chỉ tạo
+      được qua Django admin hoặc test

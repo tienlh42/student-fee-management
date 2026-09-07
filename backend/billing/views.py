@@ -1,0 +1,207 @@
+"""API cho app billing. View chỉ điều phối — logic nằm ở `services.py`."""
+
+from __future__ import annotations
+
+from datetime import date
+
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.filters import OrderingFilter, SearchFilter
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from accounts.permissions import IsTeacher, IsTeacherOrReadOnly
+from people.models import Student
+from people.permissions import WritableWithinOwnHouse
+from people.services import accessible_students, default_house_id, teacher_house_ids
+
+from .models import FeeItem, FeePackage, Invoice, StudentDiscount, StudentFeePackage
+from .serializers import (
+    FeeItemSerializer,
+    FeePackageSerializer,
+    InvoiceSerializer,
+    StudentDiscountSerializer,
+    StudentFeePackageSerializer,
+)
+from .services import generate_invoice, period_start
+
+
+class CatalogModelViewSet(viewsets.ModelViewSet):
+    """Nền chung cho các model cấu hình biểu phí — chỉ teacher/staff được đụng vào."""
+
+    permission_classes = [IsAuthenticated, IsTeacher, WritableWithinOwnHouse]
+    filter_backends = [SearchFilter, OrderingFilter]
+
+
+class FeeItemViewSet(CatalogModelViewSet):
+    serializer_class = FeeItemSerializer
+    search_fields = ["name"]
+    ordering_fields = ["name", "category", "default_amount"]
+    ordering = ["category", "name"]
+
+    def get_queryset(self):
+        return FeeItem.objects.filter(house_id__in=teacher_house_ids(self.request.user))
+
+    @action(detail=False, methods=["get"], url_path="meta")
+    def options_meta(self, request):
+        return Response(
+            {
+                "categories": [
+                    {"value": value, "label": label} for value, label in FeeItem.Category.choices
+                ],
+                "default_house": default_house_id(request.user),
+            }
+        )
+
+
+class FeePackageViewSet(CatalogModelViewSet):
+    serializer_class = FeePackageSerializer
+    search_fields = ["name"]
+    ordering_fields = ["name", "due_day_of_month"]
+    ordering = ["name"]
+
+    def get_queryset(self):
+        return FeePackage.objects.filter(
+            house_id__in=teacher_house_ids(self.request.user)
+        ).prefetch_related("items__fee_item")
+
+    @action(detail=False, methods=["get"], url_path="meta")
+    def options_meta(self, request):
+        return Response(
+            {
+                "billing_timings": [
+                    {"value": value, "label": label}
+                    for value, label in FeePackage.BillingTiming.choices
+                ],
+                "fee_items": [
+                    {"value": item.id, "label": item.name, "house": item.house_id}
+                    for item in FeeItem.objects.filter(
+                        house_id__in=teacher_house_ids(request.user), is_active=True
+                    )
+                ],
+                "default_house": default_house_id(request.user),
+            }
+        )
+
+
+class StudentFeePackageViewSet(CatalogModelViewSet):
+    serializer_class = StudentFeePackageSerializer
+    ordering = ["-effective_from"]
+
+    def get_queryset(self):
+        queryset = StudentFeePackage.objects.filter(
+            student__in=accessible_students(self.request.user)
+        ).select_related("student__person", "fee_package")
+        if student := self.request.query_params.get("student"):
+            queryset = queryset.filter(student_id=student)
+        return queryset
+
+
+class StudentDiscountViewSet(CatalogModelViewSet):
+    serializer_class = StudentDiscountSerializer
+    search_fields = ["name", "student__person__full_name"]
+    ordering = ["-effective_from"]
+
+    def get_queryset(self):
+        queryset = StudentDiscount.objects.filter(
+            student__in=accessible_students(self.request.user)
+        ).select_related("student__person", "fee_item")
+        if student := self.request.query_params.get("student"):
+            queryset = queryset.filter(student_id=student)
+        return queryset
+
+
+class InvoiceViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Hóa đơn sinh qua `generate`/lệnh `generate_invoices` — không tạo tay qua POST."""
+
+    serializer_class = InvoiceSerializer
+    permission_classes = [IsAuthenticated, IsTeacherOrReadOnly, WritableWithinOwnHouse]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ["qr_reference_code", "student__person__full_name"]
+    ordering_fields = ["period", "due_date", "status", "total_amount"]
+    ordering = ["-period"]
+
+    def get_queryset(self):
+        queryset = Invoice.objects.filter(
+            student__in=accessible_students(self.request.user)
+        ).select_related("student__person", "house").prefetch_related("items")
+
+        params = self.request.query_params
+        if period := params.get("period"):
+            queryset = queryset.filter(period=period)
+        if status_filter := params.get("status"):
+            queryset = queryset.filter(status=status_filter)
+        if student := params.get("student"):
+            queryset = queryset.filter(student_id=student)
+        if house := params.get("house"):
+            queryset = queryset.filter(house_id=house)
+        return queryset
+
+    @action(detail=False, methods=["get"], url_path="meta")
+    def options_meta(self, request):
+        return Response(
+            {
+                "statuses": [
+                    {"value": value, "label": label} for value, label in Invoice.Status.choices
+                ],
+            }
+        )
+
+    @action(detail=False, methods=["post"], url_path="generate")
+    def generate(self, request):
+        """Sinh hóa đơn nháp cho toàn bộ/một học sinh trong một kỳ.
+
+        Chỉ chạy trên các cơ sở request.user *ghi* được — kể cả khi truy vấn
+        được phép đọc rộng hơn (staff xem tất cả nhưng generate vẫn tôn trọng
+        `teacher_house_ids`, để nhất quán với quyền ghi ở nơi khác).
+        """
+        period_raw = request.data.get("period")
+        if not period_raw:
+            return Response(
+                {"period": ["Bắt buộc, dạng YYYY-MM hoặc YYYY-MM-DD."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            parts = period_raw.split("-")
+            if len(parts) == 2:
+                period = date(int(parts[0]), int(parts[1]), 1)
+            else:
+                period = period_start(date.fromisoformat(period_raw))
+        except (ValueError, TypeError):
+            return Response(
+                {"period": ["Không đọc được ngày."]}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        writable_house_ids = set(teacher_house_ids(request.user))
+        students = (
+            accessible_students(request.user)
+            .filter(status=Student.Status.ACTIVE, house_id__in=writable_house_ids)
+            .select_related("house")
+        )
+        if student_id := request.data.get("student"):
+            students = students.filter(pk=student_id)
+        if house_id := request.data.get("house"):
+            students = students.filter(house_id=house_id)
+
+        created = existing = 0
+        for student in students:
+            already_had = Invoice.objects.filter(student=student, period=period).exists()
+            generate_invoice(student, period)
+            if already_had:
+                existing += 1
+            else:
+                created += 1
+
+        return Response({"period": period.isoformat(), "created": created, "existing": existing})
+
+    @action(detail=True, methods=["post"], url_path="void")
+    def void(self, request, pk=None):
+        invoice = self.get_object()
+        invoice.status = Invoice.Status.VOID
+        invoice.save(update_fields=["status", "updated_at"])
+        return Response(InvoiceSerializer(invoice).data)

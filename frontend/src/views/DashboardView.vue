@@ -55,9 +55,9 @@ onMounted(async () => {
     </div>
 
     <Message severity="info" :closable="false">
-      Màn hình <strong>Học sinh</strong> đã dùng được. Hóa đơn, Đối soát tiền vào và
-      Thông báo vẫn là placeholder — API của <code>billing</code>,
-      <code>payments</code>, <code>notifications</code> chưa viết.
+      Màn hình <strong>Học sinh</strong> và <strong>Hóa đơn</strong> đã dùng được. Đối soát
+      tiền vào và Thông báo vẫn là placeholder — API của <code>payments</code>,
+      <code>notifications</code> chưa viết.
     </Message>
 
     <p v-if="!auth.canEdit" class="text-sm text-surface-500">

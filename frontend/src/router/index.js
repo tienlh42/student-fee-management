@@ -37,7 +37,7 @@ const routes = [
     path: "/invoices",
     name: "invoices",
     meta: { title: "Hóa đơn" },
-    component: () => import("../views/PlaceholderView.vue"),
+    component: () => import("../views/InvoicesView.vue"),
   },
   {
     path: "/transactions",

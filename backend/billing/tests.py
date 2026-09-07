@@ -1,9 +1,12 @@
 from datetime import date
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
+from rest_framework.test import APIClient
 
-from people.models import Person, Student
+from people.models import Guardian, Person, Student, StudentGuardian, Teacher
+from people.services import link_guardian
 from tenancy.models import House
 
 from .models import (
@@ -15,6 +18,8 @@ from .models import (
     StudentFeePackage,
 )
 from .services import build_draft_lines, due_date_for, generate_invoice
+
+User = get_user_model()
 
 
 class InvoiceGenerationTests(TestCase):
@@ -97,3 +102,191 @@ class InvoiceGenerationTests(TestCase):
         self.assertEqual(invoice.total_amount, Decimal("3800000"))
         self.assertEqual(invoice.net_amount, Decimal("3600000"))
         self.assertEqual(invoice.outstanding_amount, Decimal("3600000"))
+
+
+class BillingApiFixtureMixin:
+    def setUp(self):
+        self.house_a = House.objects.create(name="Cơ sở A", inbound_email_slug="co-so-a")
+        self.house_b = House.objects.create(name="Cơ sở B", inbound_email_slug="co-so-b")
+
+        self.student_a = self._student("Học sinh A", self.house_a)
+        self.student_b = self._student("Học sinh B", self.house_b)
+
+        self.teacher_user = self._user(
+            "co_giao_a", Teacher(house=self.house_a), full_name="Cô giáo A"
+        )
+        self.guardian_user = self._user("phu_huynh", Guardian(), full_name="Phụ huynh A")
+        link_guardian(
+            self.student_a,
+            guardian=Guardian.objects.get(person=self.guardian_user.person),
+            relationship_type=StudentGuardian.Relationship.MOTHER,
+            is_primary_contact=True,
+        )
+
+        self.fee_item = FeeItem.objects.create(
+            house=self.house_a,
+            name="Học phí",
+            category=FeeItem.Category.TUITION,
+            default_amount=Decimal("3000000"),
+        )
+        self.package = FeePackage.objects.create(house=self.house_a, name="Gói chuẩn")
+        FeePackageItem.objects.create(fee_package=self.package, fee_item=self.fee_item)
+        StudentFeePackage.objects.create(
+            student=self.student_a, fee_package=self.package, effective_from=date(2026, 1, 1)
+        )
+
+        self.client = APIClient()
+
+    def _student(self, full_name: str, house: House) -> Student:
+        person = Person.objects.create(full_name=full_name)
+        return Student.objects.create(person=person, house=house)
+
+    def _user(self, username: str, role_obj, *, full_name: str) -> User:
+        person = Person.objects.create(full_name=full_name)
+        role_obj.person = person
+        role_obj.save()
+        return User.objects.create_user(username=username, password="matkhau-rat-dai", person=person)
+
+
+class FeeItemApiTests(BillingApiFixtureMixin, TestCase):
+    def test_anonymous_is_rejected(self):
+        self.assertEqual(self.client.get("/api/billing/fee-items/").status_code, 403)
+
+    def test_teacher_list_is_scoped_to_own_house(self):
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.get("/api/billing/fee-items/")
+        self.assertEqual(response.data["count"], 1)
+
+    def test_guardian_cannot_read_fee_catalog(self):
+        # Biểu phí là cấu hình nội bộ — chỉ teacher/staff được đụng vào, không phải
+        # cứ đọc-được-mọi-thứ như phần lớn API khác của guardian.
+        self.client.force_authenticate(self.guardian_user)
+        self.assertEqual(self.client.get("/api/billing/fee-items/").status_code, 403)
+
+    def test_teacher_cannot_create_in_other_house(self):
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(
+            "/api/billing/fee-items/",
+            {"house": self.house_b.pk, "name": "Lấn sân", "default_amount": "100000"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("house", response.data)
+
+    def test_teacher_creates_fee_item_in_own_house(self):
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(
+            "/api/billing/fee-items/",
+            {"house": self.house_a.pk, "name": "Tiền ăn", "default_amount": "900000"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+
+
+class FeePackageApiTests(BillingApiFixtureMixin, TestCase):
+    def test_create_package_with_nested_items(self):
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(
+            "/api/billing/fee-packages/",
+            {
+                "house": self.house_a.pk,
+                "name": "Gói mới",
+                "due_day_of_month": 10,
+                "items": [{"fee_item": self.fee_item.pk, "amount": "2500000"}],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        package = FeePackage.objects.get(name="Gói mới")
+        self.assertEqual(package.items.count(), 1)
+        self.assertEqual(package.items.first().amount, Decimal("2500000"))
+
+    def test_item_from_other_house_is_rejected(self):
+        other_item = FeeItem.objects.create(
+            house=self.house_b, name="Khác cơ sở", default_amount=Decimal("1")
+        )
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(
+            "/api/billing/fee-packages/",
+            {
+                "house": self.house_a.pk,
+                "name": "Gói lỗi",
+                "due_day_of_month": 5,
+                "items": [{"fee_item": other_item.pk}],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("items", response.data)
+
+    def test_update_replaces_items(self):
+        self.client.force_authenticate(self.teacher_user)
+        other_item = FeeItem.objects.create(
+            house=self.house_a, name="Tiền ăn", default_amount=Decimal("500000")
+        )
+        response = self.client.patch(
+            f"/api/billing/fee-packages/{self.package.pk}/",
+            {"items": [{"fee_item": other_item.pk, "amount": "500000"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.package.refresh_from_db()
+        self.assertEqual(self.package.items.count(), 1)
+        self.assertEqual(self.package.items.first().fee_item, other_item)
+
+
+class InvoiceApiTests(BillingApiFixtureMixin, TestCase):
+    def test_generate_creates_invoice_for_own_house_only(self):
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(
+            "/api/billing/invoices/generate/", {"period": "2026-09"}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["created"], 1)
+        self.assertTrue(
+            Invoice.objects.filter(student=self.student_a, period=date(2026, 9, 1)).exists()
+        )
+        self.assertFalse(Invoice.objects.filter(student=self.student_b).exists())
+
+    def test_generate_twice_is_idempotent(self):
+        self.client.force_authenticate(self.teacher_user)
+        self.client.post("/api/billing/invoices/generate/", {"period": "2026-09"}, format="json")
+        response = self.client.post(
+            "/api/billing/invoices/generate/", {"period": "2026-09"}, format="json"
+        )
+        self.assertEqual(response.data, {"period": "2026-09-01", "created": 0, "existing": 1})
+
+    def test_guardian_sees_only_own_child_invoice(self):
+        generate_invoice(self.student_a, date(2026, 9, 1))
+        generate_invoice(self.student_b, date(2026, 9, 1))
+        self.client.force_authenticate(self.guardian_user)
+        response = self.client.get("/api/billing/invoices/")
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["student"], self.student_a.pk)
+
+    def test_guardian_cannot_void_invoice(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.guardian_user)
+        response = self.client.post(f"/api/billing/invoices/{invoice.pk}/void/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_teacher_voids_invoice(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(f"/api/billing/invoices/{invoice.pk}/void/")
+        self.assertEqual(response.status_code, 200, response.data)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.Status.VOID)
+
+    def test_adjustment_editable_but_total_amount_is_not(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.patch(
+            f"/api/billing/invoices/{invoice.pk}/",
+            {"adjustment_amount": "-100000", "total_amount": "999"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.adjustment_amount, Decimal("-100000"))
+        self.assertEqual(invoice.total_amount, Decimal("3000000"))
