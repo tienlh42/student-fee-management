@@ -200,6 +200,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     net_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     paid_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    refunded_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    net_paid = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     outstanding_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     items = InvoiceItemSerializer(many=True, read_only=True)
 
@@ -217,9 +219,12 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "adjustment_note",
             "net_amount",
             "paid_amount",
+            "refunded_amount",
+            "net_paid",
             "outstanding_amount",
             "status",
             "status_display",
+            "cancel_reason",
             "due_date",
             "qr_reference_code",
             "items",
@@ -232,5 +237,6 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "period",
             "total_amount",
             "status",
+            "cancel_reason",
             "qr_reference_code",
         ]

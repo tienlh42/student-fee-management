@@ -28,11 +28,12 @@ import {
   studentDiscountsApi,
   studentFeePackagesApi,
 } from "@/api/billing";
-import { paymentsApi } from "@/api/payments";
+import { paymentsApi, refundsApi } from "@/api/payments";
 import FeeItemFormDialog from "@/components/FeeItemFormDialog.vue";
 import FeePackageFormDialog from "@/components/FeePackageFormDialog.vue";
 import InvoiceGenerateDialog from "@/components/InvoiceGenerateDialog.vue";
 import InvoicePaymentsDialog from "@/components/InvoicePaymentsDialog.vue";
+import RefundDialog from "@/components/RefundDialog.vue";
 import StatusLegendDialog from "@/components/StatusLegendDialog.vue";
 import StudentBillingSummaryDialog from "@/components/StudentBillingSummaryDialog.vue";
 import StudentDiscountFormDialog from "@/components/StudentDiscountFormDialog.vue";
@@ -187,6 +188,30 @@ function openPayments(invoice) {
 
 async function onPaymentRecorded() {
   toast.add({ severity: "success", summary: "Đã ghi nhận thanh toán", life: 2500 });
+  await loadInvoices();
+}
+
+const refundVisible = ref(false);
+const selectedInvoiceForRefund = ref(null);
+const refundMethodOptions = ref([]);
+
+async function loadRefundMethodOptions() {
+  if (!auth.role.can_see_bank_data) return;
+  try {
+    const meta = await refundsApi.meta();
+    refundMethodOptions.value = meta.methods;
+  } catch {
+    refundMethodOptions.value = [];
+  }
+}
+
+function openRefund(invoice) {
+  selectedInvoiceForRefund.value = invoice;
+  refundVisible.value = true;
+}
+
+async function onRefunded() {
+  toast.add({ severity: "success", summary: "Đã hoàn tiền", life: 2500 });
   await loadInvoices();
 }
 
@@ -576,6 +601,7 @@ onMounted(async () => {
     loadSubscriptions(),
     loadDiscounts(),
     loadPaymentMethodOptions(),
+    loadRefundMethodOptions(),
   ]);
 });
 </script>
@@ -702,7 +728,7 @@ onMounted(async () => {
                 </template>
               </Column>
 
-              <Column header="" style="width: 15.5rem">
+              <Column header="" style="width: 18rem">
                 <template #body="{ data }">
                   <div class="flex justify-end">
                     <Button
@@ -731,6 +757,16 @@ onMounted(async () => {
                       rounded
                       aria-label="Lịch sử thanh toán"
                       @click="openPayments(data)"
+                    />
+                    <Button
+                      v-if="auth.role.can_see_bank_data && Number(data.net_paid) > 0"
+                      v-tooltip.top="'Hoàn tiền'"
+                      icon="pi pi-replay"
+                      severity="warn"
+                      text
+                      rounded
+                      aria-label="Hoàn tiền"
+                      @click="openRefund(data)"
                     />
                     <Button
                       v-if="auth.canEdit && data.status === 'void'"
@@ -1072,6 +1108,13 @@ onMounted(async () => {
       :mode="paymentDialogMode"
       :method-options="paymentMethodOptions"
       @recorded="onPaymentRecorded"
+    />
+
+    <RefundDialog
+      v-model:visible="refundVisible"
+      :invoice="selectedInvoiceForRefund"
+      :method-options="refundMethodOptions"
+      @refunded="onRefunded"
     />
 
     <StatusLegendDialog

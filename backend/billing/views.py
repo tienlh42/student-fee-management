@@ -15,12 +15,12 @@ from rest_framework.response import Response
 from accounts.permissions import CanSeeBankData, IsTeacher, IsTeacherOrReadOnly
 from payments.models import Payment
 from payments.serializers import PaymentSerializer
-from payments.services import record_manual_payment
+from payments.services import process_refund, record_manual_payment
 from people.models import Student
 from people.permissions import WritableWithinOwnHouse
 from people.services import accessible_students, default_house_id, teacher_house_ids
 
-from .models import FeeItem, FeePackage, Invoice, StudentDiscount, StudentFeePackage
+from .models import FeeItem, FeePackage, Invoice, Refund, StudentDiscount, StudentFeePackage
 from .serializers import (
     FeeItemSerializer,
     FeePackageSerializer,
@@ -230,7 +230,8 @@ class InvoiceViewSet(
     def void(self, request, pk=None):
         invoice = self.get_object()
         invoice.status = Invoice.Status.VOID
-        invoice.save(update_fields=["status", "updated_at"])
+        invoice.cancel_reason = request.data.get("reason", "")
+        invoice.save(update_fields=["status", "cancel_reason", "updated_at"])
         return Response(InvoiceSerializer(invoice).data)
 
     @action(detail=True, methods=["post"], url_path="restore")
@@ -243,6 +244,8 @@ class InvoiceViewSet(
         # Đưa tạm về ISSUED rồi để recalculate_status suy lại đúng trạng thái
         # theo số tiền đã thu (có thể đã thu một phần trước khi bị hủy).
         invoice.status = Invoice.Status.ISSUED
+        invoice.cancel_reason = ""
+        invoice.save(update_fields=["status", "cancel_reason", "updated_at"])
         recalculate_status(invoice)
         return Response(InvoiceSerializer(invoice).data)
 
@@ -287,3 +290,32 @@ class InvoiceViewSet(
     def payments(self, request, pk=None):
         invoice = self.get_object()
         return Response(PaymentSerializer(invoice.payments.all(), many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="refund")
+    def refund(self, request, pk=None):
+        """Hoàn tiền — xem `payments.services.process_refund` cho toàn bộ quy tắc.
+
+        Hai lựa chọn độc lập ở input (`amount`, `cancel_obligation`) bao quát
+        cả 4 tổ hợp đóng đủ/một phần × hoàn hết/hoàn một phần, không cần biết
+        trước hóa đơn đang ở tổ hợp nào.
+        """
+        invoice = self.get_object()
+        try:
+            amount = Decimal(str(request.data.get("amount", "")))
+        except InvalidOperation:
+            return Response({"detail": "Không đọc được số tiền."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            process_refund(
+                invoice,
+                amount,
+                cancel_obligation=bool(request.data.get("cancel_obligation")),
+                method=request.data.get("method", Refund.Method.BANK_TRANSFER),
+                user=request.user,
+                reason=request.data.get("reason", ""),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        invoice.refresh_from_db()
+        return Response(InvoiceSerializer(invoice).data)

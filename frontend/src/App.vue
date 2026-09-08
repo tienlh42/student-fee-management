@@ -38,6 +38,12 @@ const nav = computed(() =>
       to: "/transactions",
       visible: auth.role.can_see_bank_data,
     },
+    {
+      label: "Hoàn tiền",
+      icon: "pi pi-replay",
+      to: "/refunds",
+      visible: auth.role.can_see_bank_data,
+    },
     { label: "Thông báo", icon: "pi pi-bell", to: "/notifications" },
   ].filter((item) => item.visible !== false),
 );

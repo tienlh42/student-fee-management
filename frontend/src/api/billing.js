@@ -50,4 +50,5 @@ export const invoicesApi = {
   remove: (id) => api.delete(`/billing/invoices/${id}/`),
   payments: (id) => api.get(`/billing/invoices/${id}/payments/`),
   recordPayment: (id, payload) => api.post(`/billing/invoices/${id}/record-payment/`, payload),
+  refund: (id, payload) => api.post(`/billing/invoices/${id}/refund/`, payload),
 };

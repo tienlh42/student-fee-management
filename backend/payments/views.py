@@ -19,11 +19,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.permissions import CanSeeBankData
-from billing.models import Invoice
+from billing.models import Invoice, Refund
 from people.services import teacher_house_ids
 
 from .models import IncomingTransaction, Payment
-from .serializers import IncomingTransactionSerializer, PaymentSerializer
+from .serializers import IncomingTransactionSerializer, PaymentSerializer, RefundSerializer
 from .services import allocate_manually, try_auto_match
 
 
@@ -161,6 +161,44 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
                 ],
                 "matched_by": [
                     {"value": value, "label": label} for value, label in Payment.MatchedBy.choices
+                ],
+            }
+        )
+
+
+class RefundViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Sổ hoàn tiền — chỉ đọc. Tạo qua `billing.InvoiceViewSet.refund`
+    (`payments.services.process_refund`), không qua create/update chung chung.
+    """
+
+    serializer_class = RefundSerializer
+    permission_classes = [IsAuthenticated, CanSeeBankData]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = [
+        "invoice__qr_reference_code",
+        "invoice__student__person__full_name",
+        "reason",
+    ]
+    ordering = ["-refunded_at"]
+
+    def get_queryset(self):
+        queryset = Refund.objects.filter(
+            invoice__house_id__in=teacher_house_ids(self.request.user)
+        ).select_related("invoice__student__person", "refunded_by_user")
+
+        params = self.request.query_params
+        if method := params.get("method"):
+            queryset = queryset.filter(method=method)
+        if invoice := params.get("invoice"):
+            queryset = queryset.filter(invoice_id=invoice)
+        return queryset
+
+    @action(detail=False, methods=["get"], url_path="meta")
+    def options_meta(self, request):
+        return Response(
+            {
+                "methods": [
+                    {"value": value, "label": label} for value, label in Refund.Method.choices
                 ],
             }
         )

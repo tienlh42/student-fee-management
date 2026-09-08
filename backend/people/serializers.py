@@ -77,6 +77,7 @@ class StudentSerializer(serializers.ModelSerializer):
     phone = serializers.CharField(source="person.phone", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     house_name = serializers.CharField(source="house.name", read_only=True)
+    credit_balance = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     guardians = serializers.SerializerMethodField()
 
     class Meta:
@@ -92,6 +93,7 @@ class StudentSerializer(serializers.ModelSerializer):
             "status",
             "status_display",
             "enrolled_date",
+            "credit_balance",
             "guardians",
         ]
 

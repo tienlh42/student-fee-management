@@ -187,6 +187,10 @@ class Invoice(TimeStampedModel):
         unique=True,
         help_text="Chuỗi xuất hiện trong nội dung chuyển khoản, dùng để tự khớp giao dịch.",
     )
+    cancel_reason = models.CharField(
+        "Lý do hủy", max_length=500, blank=True,
+        help_text="Ghi khi status chuyển sang VOID — qua nút hủy tay hoặc hoàn tiền có hủy nghĩa vụ.",
+    )
 
     class Meta:
         verbose_name = "Hóa đơn"
@@ -221,8 +225,15 @@ class Invoice(TimeStampedModel):
         return agg["total"] or Decimal("0")
 
     @property
+    def net_paid(self) -> Decimal:
+        """Số tiền trường thực giữ lại sau khi trừ các lần hoàn — dùng để suy
+        trạng thái (`services.recalculate_status`) và làm trần cho một lần
+        hoàn tiền mới (không hoàn quá số đang thực giữ)."""
+        return self.paid_amount - self.refunded_amount
+
+    @property
     def outstanding_amount(self) -> Decimal:
-        return self.net_amount - self.paid_amount + self.refunded_amount
+        return self.net_amount - self.net_paid
 
 
 class InvoiceItem(TimeStampedModel):
@@ -245,12 +256,35 @@ class InvoiceItem(TimeStampedModel):
 
 
 class Refund(CreatedAtModel):
+    class Method(models.TextChoices):
+        BANK_TRANSFER = "bank_transfer", "Chuyển khoản"
+        CASH = "cash", "Tiền mặt"
+        CREDIT = "credit", "Giữ làm credit"
+
     invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name="refunds")
+    payment = models.ForeignKey(
+        "payments.Payment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="refunds",
+        help_text="Payment gốc liên quan, nếu xác định được — không bắt buộc.",
+    )
     amount = models.DecimalField("Số tiền hoàn", max_digits=12, decimal_places=2)
+    method = models.CharField(
+        "Phương thức hoàn", max_length=20, choices=Method.choices, default=Method.BANK_TRANSFER
+    )
     reason = models.CharField("Lý do", max_length=500, blank=True)
     refunded_at = models.DateTimeField("Thời điểm hoàn")
     refunded_by_user = models.ForeignKey(
         "accounts.User", on_delete=models.PROTECT, related_name="refunds_made"
+    )
+    needs_adjustment_invoice = models.BooleanField(
+        "Cần lập hóa đơn điều chỉnh",
+        default=False,
+        help_text="Đặt True khi hóa đơn gốc đã có hóa đơn điện tử — xử lý riêng, "
+        "không chặn luồng hoàn tiền nội bộ. Hệ thống hiện chưa theo dõi hóa đơn "
+        "điện tử nên cờ này luôn False cho tới khi có tính năng đó.",
     )
 
     class Meta:

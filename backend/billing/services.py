@@ -154,14 +154,20 @@ def generate_invoice(student: Student, period: date, *, due_day_of_month: int = 
 
 
 def recalculate_status(invoice: Invoice) -> Invoice:
-    """Đồng bộ status theo số tiền đã thu. Gọi sau mỗi lần ghi nhận Payment/Refund."""
+    """Đồng bộ status theo net_paid (đã thu - đã hoàn). Gọi sau mỗi lần ghi
+    nhận Payment/Refund.
+
+    Dùng `net_paid` (không phải `paid_amount` thô) để hoàn tiền toàn bộ sau
+    khi đã thu đủ đưa hóa đơn về đúng lại ISSUED/DRAFT thay vì kẹt ở
+    PARTIALLY_PAID (paid_amount vẫn dương dù đã hoàn hết).
+    """
     if invoice.status == Invoice.Status.VOID:
         return invoice
 
-    outstanding = invoice.outstanding_amount
-    if outstanding <= ZERO and invoice.net_amount > ZERO:
+    net_paid = invoice.net_paid
+    if net_paid >= invoice.net_amount and invoice.net_amount > ZERO:
         invoice.status = Invoice.Status.PAID
-    elif invoice.paid_amount > ZERO:
+    elif net_paid > ZERO:
         invoice.status = Invoice.Status.PARTIALLY_PAID
     elif invoice.status == Invoice.Status.DRAFT:
         return invoice

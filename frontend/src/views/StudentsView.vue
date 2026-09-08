@@ -20,6 +20,7 @@ import StudentFormDialog from "@/components/StudentFormDialog.vue";
 import StudentGuardiansDialog from "@/components/StudentGuardiansDialog.vue";
 import { useAuthStore } from "@/stores/auth";
 import { formatDate } from "@/utils/date";
+import { formatMoney } from "@/utils/money";
 
 const auth = useAuthStore();
 const toast = useToast();
@@ -276,6 +277,15 @@ onMounted(async () => {
 
       <Column field="enrolled_date" header="Nhập học" style="width: 8rem">
         <template #body="{ data }">{{ formatDate(data.enrolled_date) }}</template>
+      </Column>
+
+      <Column header="Số dư credit" style="width: 9rem">
+        <template #body="{ data }">
+          <span v-if="Number(data.credit_balance) > 0" class="text-green-600 font-medium">
+            {{ formatMoney(data.credit_balance) }}
+          </span>
+          <span v-else class="text-surface-400">—</span>
+        </template>
       </Column>
 
       <Column field="status" style="width: 9rem">
