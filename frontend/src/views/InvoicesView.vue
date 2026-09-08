@@ -31,6 +31,7 @@ import {
 import FeeItemFormDialog from "@/components/FeeItemFormDialog.vue";
 import FeePackageFormDialog from "@/components/FeePackageFormDialog.vue";
 import InvoiceGenerateDialog from "@/components/InvoiceGenerateDialog.vue";
+import StudentBillingSummaryDialog from "@/components/StudentBillingSummaryDialog.vue";
 import StudentDiscountFormDialog from "@/components/StudentDiscountFormDialog.vue";
 import StudentFeePackageFormDialog from "@/components/StudentFeePackageFormDialog.vue";
 import { useAuthStore } from "@/stores/auth";
@@ -60,6 +61,13 @@ const invoiceLoading = ref(false);
 const invoiceFilters = reactive({ search: "", status: null, period: null });
 const invoicePaging = reactive({ page: 1, rows: 25 });
 const generateVisible = ref(false);
+const studentSummaryVisible = ref(false);
+const selectedStudentForSummary = ref(null);
+
+function openStudentSummary(invoice) {
+  selectedStudentForSummary.value = { id: invoice.student, name: invoice.student_name };
+  studentSummaryVisible.value = true;
+}
 
 async function loadInvoices() {
   invoiceLoading.value = true;
@@ -139,16 +147,62 @@ function confirmVoid(invoice) {
   });
 }
 
+function confirmDeleteInvoice(invoice) {
+  confirm.require({
+    header: "Xóa hóa đơn",
+    message: `Xóa hẳn hóa đơn ${invoice.qr_reference_code} của ${invoice.student_name}? Sau khi xóa có thể sinh lại hóa đơn khác cho cùng kỳ này.`,
+    icon: "pi pi-exclamation-triangle",
+    acceptLabel: "Xóa",
+    rejectLabel: "Hủy",
+    acceptProps: { severity: "danger" },
+    accept: async () => {
+      try {
+        await invoicesApi.remove(invoice.id);
+        toast.add({ severity: "success", summary: "Đã xóa hóa đơn", life: 2500 });
+        await loadInvoices();
+      } catch (err) {
+        toast.add({ severity: "error", summary: errorMessage(err), life: 5000 });
+      }
+    },
+  });
+}
+
+function confirmRestore(invoice) {
+  confirm.require({
+    header: "Khôi phục hóa đơn",
+    message: `Khôi phục hóa đơn ${invoice.qr_reference_code} của ${invoice.student_name}?`,
+    icon: "pi pi-question-circle",
+    acceptLabel: "Khôi phục",
+    rejectLabel: "Đóng",
+    accept: async () => {
+      try {
+        await invoicesApi.restore(invoice.id);
+        toast.add({ severity: "success", summary: "Đã khôi phục hóa đơn", life: 2500 });
+        await loadInvoices();
+      } catch (err) {
+        toast.add({ severity: "error", summary: errorMessage(err), life: 4000 });
+      }
+    },
+  });
+}
+
 /* ---------- Khoản thu ---------- */
 const feeItemMeta = ref({ categories: [] });
 const feeItemRows = ref([]);
 const feeItemLoading = ref(false);
 const feeItemFormVisible = ref(false);
 const selectedFeeItem = ref(null);
+const feeItemSearch = ref("");
 
 const feeItemOptions = computed(() =>
   feeItemRows.value.map((item) => ({ value: item.id, label: item.name })),
 );
+
+const filteredFeeItemRows = computed(() => {
+  const term = feeItemSearch.value.trim().toLowerCase();
+  if (!term) return feeItemRows.value;
+  return feeItemRows.value.filter((row) => row.name.toLowerCase().includes(term));
+});
 
 async function loadFeeItems() {
   feeItemLoading.value = true;
@@ -219,10 +273,17 @@ const feePackageRows = ref([]);
 const feePackageLoading = ref(false);
 const feePackageFormVisible = ref(false);
 const selectedFeePackage = ref(null);
+const feePackageSearch = ref("");
 
 const packageOptions = computed(() =>
   feePackageRows.value.map((pkg) => ({ value: pkg.id, label: pkg.name })),
 );
+
+const filteredFeePackageRows = computed(() => {
+  const term = feePackageSearch.value.trim().toLowerCase();
+  if (!term) return feePackageRows.value;
+  return feePackageRows.value.filter((row) => row.name.toLowerCase().includes(term));
+});
 
 async function loadFeePackages() {
   feePackageLoading.value = true;
@@ -292,6 +353,17 @@ const subscriptionRows = ref([]);
 const subscriptionLoading = ref(false);
 const subscriptionFormVisible = ref(false);
 const selectedSubscription = ref(null);
+const subscriptionSearch = ref("");
+
+const filteredSubscriptionRows = computed(() => {
+  const term = subscriptionSearch.value.trim().toLowerCase();
+  if (!term) return subscriptionRows.value;
+  return subscriptionRows.value.filter(
+    (row) =>
+      row.student_name.toLowerCase().includes(term) ||
+      row.fee_package_name.toLowerCase().includes(term),
+  );
+});
 
 async function loadSubscriptions() {
   subscriptionLoading.value = true;
@@ -349,6 +421,16 @@ const discountRows = ref([]);
 const discountLoading = ref(false);
 const discountFormVisible = ref(false);
 const selectedDiscount = ref(null);
+const discountSearch = ref("");
+
+const filteredDiscountRows = computed(() => {
+  const term = discountSearch.value.trim().toLowerCase();
+  if (!term) return discountRows.value;
+  return discountRows.value.filter(
+    (row) =>
+      row.student_name.toLowerCase().includes(term) || row.name.toLowerCase().includes(term),
+  );
+});
 
 async function loadDiscounts() {
   discountLoading.value = true;
@@ -533,9 +615,26 @@ onMounted(async () => {
                 </template>
               </Column>
 
-              <Column header="" style="width: 6rem">
+              <Column header="" style="width: 11rem">
                 <template #body="{ data }">
                   <div class="flex justify-end">
+                    <Button
+                      v-tooltip.top="'Xem khoản thu, gói phí, giảm trừ của học sinh'"
+                      icon="pi pi-eye"
+                      text
+                      rounded
+                      aria-label="Xem chi tiết học sinh"
+                      @click="openStudentSummary(data)"
+                    />
+                    <Button
+                      v-if="auth.canEdit && data.status === 'void'"
+                      v-tooltip.top="'Khôi phục hóa đơn'"
+                      icon="pi pi-history"
+                      text
+                      rounded
+                      aria-label="Khôi phục hóa đơn"
+                      @click="confirmRestore(data)"
+                    />
                     <Button
                       v-if="auth.canEdit && data.status !== 'void' && data.status !== 'paid'"
                       v-tooltip.top="'Hủy hóa đơn'"
@@ -545,6 +644,16 @@ onMounted(async () => {
                       rounded
                       aria-label="Hủy hóa đơn"
                       @click="confirmVoid(data)"
+                    />
+                    <Button
+                      v-if="auth.canEdit"
+                      v-tooltip.top="'Xóa hóa đơn (để sinh lại kỳ này)'"
+                      icon="pi pi-trash"
+                      severity="danger"
+                      text
+                      rounded
+                      aria-label="Xóa hóa đơn"
+                      @click="confirmDeleteInvoice(data)"
                     />
                   </div>
                 </template>
@@ -557,6 +666,12 @@ onMounted(async () => {
         <TabPanel value="fee-items">
           <div class="flex flex-col gap-4">
             <Toolbar>
+              <template #start>
+                <IconField>
+                  <InputIcon class="pi pi-search" />
+                  <InputText v-model="feeItemSearch" placeholder="Tìm khoản thu…" />
+                </IconField>
+              </template>
               <template #end>
                 <Button
                   v-if="auth.canEdit"
@@ -567,7 +682,7 @@ onMounted(async () => {
               </template>
             </Toolbar>
 
-            <DataTable :value="feeItemRows" :loading="feeItemLoading" data-key="id" size="small" striped-rows>
+            <DataTable :value="filteredFeeItemRows" :loading="feeItemLoading" data-key="id" size="small" striped-rows>
               <template #empty>
                 <div class="py-6 text-center text-surface-500 text-sm">Chưa có khoản thu nào.</div>
               </template>
@@ -618,7 +733,13 @@ onMounted(async () => {
             <div class="flex flex-col gap-4">
               <Toolbar>
                 <template #start>
-                  <span class="font-medium">Gói phí</span>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium">Gói phí</span>
+                    <IconField>
+                      <InputIcon class="pi pi-search" />
+                      <InputText v-model="feePackageSearch" placeholder="Tìm gói phí…" />
+                    </IconField>
+                  </div>
                 </template>
                 <template #end>
                   <Button
@@ -631,7 +752,7 @@ onMounted(async () => {
               </Toolbar>
 
               <DataTable
-                :value="feePackageRows"
+                :value="filteredFeePackageRows"
                 :loading="feePackageLoading"
                 data-key="id"
                 size="small"
@@ -686,7 +807,13 @@ onMounted(async () => {
             <div class="flex flex-col gap-4 pt-2 border-t border-surface-200 dark:border-surface-700">
               <Toolbar>
                 <template #start>
-                  <span class="font-medium">Học sinh đăng ký gói phí</span>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium">Học sinh đăng ký gói phí</span>
+                    <IconField>
+                      <InputIcon class="pi pi-search" />
+                      <InputText v-model="subscriptionSearch" placeholder="Tìm học sinh, gói phí…" />
+                    </IconField>
+                  </div>
                 </template>
                 <template #end>
                   <Button
@@ -699,7 +826,7 @@ onMounted(async () => {
               </Toolbar>
 
               <DataTable
-                :value="subscriptionRows"
+                :value="filteredSubscriptionRows"
                 :loading="subscriptionLoading"
                 data-key="id"
                 size="small"
@@ -749,6 +876,12 @@ onMounted(async () => {
         <TabPanel value="discounts">
           <div class="flex flex-col gap-4">
             <Toolbar>
+              <template #start>
+                <IconField>
+                  <InputIcon class="pi pi-search" />
+                  <InputText v-model="discountSearch" placeholder="Tìm học sinh, giảm trừ…" />
+                </IconField>
+              </template>
               <template #end>
                 <Button
                   v-if="auth.canEdit"
@@ -759,7 +892,7 @@ onMounted(async () => {
               </template>
             </Toolbar>
 
-            <DataTable :value="discountRows" :loading="discountLoading" data-key="id" size="small" striped-rows>
+            <DataTable :value="filteredDiscountRows" :loading="discountLoading" data-key="id" size="small" striped-rows>
               <template #empty>
                 <div class="py-6 text-center text-surface-500 text-sm">Chưa có giảm trừ nào.</div>
               </template>
@@ -818,6 +951,12 @@ onMounted(async () => {
       v-model:visible="generateVisible"
       :student-options="studentOptions"
       @generated="onGenerated"
+    />
+
+    <StudentBillingSummaryDialog
+      v-model:visible="studentSummaryVisible"
+      :student="selectedStudentForSummary"
+      :fee-packages="feePackageRows"
     />
 
     <FeeItemFormDialog

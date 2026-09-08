@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from django.db.models.deletion import ProtectedError
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
@@ -23,7 +24,7 @@ from .serializers import (
     StudentDiscountSerializer,
     StudentFeePackageSerializer,
 )
-from .services import generate_invoice, period_start
+from .services import generate_invoice, period_start, recalculate_status
 
 
 class CatalogModelViewSet(viewsets.ModelViewSet):
@@ -115,6 +116,7 @@ class InvoiceViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
     """Hóa đơn sinh qua `generate`/lệnh `generate_invoices` — không tạo tay qua POST."""
@@ -141,6 +143,27 @@ class InvoiceViewSet(
         if house := params.get("house"):
             queryset = queryset.filter(house_id=house)
         return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        """Xóa hẳn hóa đơn — để sinh lại hóa đơn khác cho cùng học sinh/kỳ đó
+        (bị chặn bởi `uniq_invoice_student_period` nếu bản cũ còn tồn tại).
+
+        Đã có thanh toán/hoàn tiền thì không xóa được (Payment/Refund trỏ về
+        Invoice qua on_delete=PROTECT) — dùng `void` thay vì xóa trong trường
+        hợp đó.
+        """
+        invoice = self.get_object()
+        try:
+            invoice.delete()
+        except ProtectedError:
+            return Response(
+                {
+                    "detail": "Hóa đơn đã có thanh toán hoặc hoàn tiền, không xóa được — "
+                    "hủy hóa đơn thay vì xóa."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["get"], url_path="meta")
     def options_meta(self, request):
@@ -204,4 +227,17 @@ class InvoiceViewSet(
         invoice = self.get_object()
         invoice.status = Invoice.Status.VOID
         invoice.save(update_fields=["status", "updated_at"])
+        return Response(InvoiceSerializer(invoice).data)
+
+    @action(detail=True, methods=["post"], url_path="restore")
+    def restore(self, request, pk=None):
+        invoice = self.get_object()
+        if invoice.status != Invoice.Status.VOID:
+            return Response(
+                {"detail": "Hóa đơn này chưa bị hủy."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        # Đưa tạm về ISSUED rồi để recalculate_status suy lại đúng trạng thái
+        # theo số tiền đã thu (có thể đã thu một phần trước khi bị hủy).
+        invoice.status = Invoice.Status.ISSUED
+        recalculate_status(invoice)
         return Response(InvoiceSerializer(invoice).data)

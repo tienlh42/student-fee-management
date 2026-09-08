@@ -46,4 +46,6 @@ export const invoicesApi = {
   update: (id, payload) => api.patch(`/billing/invoices/${id}/`, payload),
   generate: (payload) => api.post("/billing/invoices/generate/", payload),
   void: (id) => api.post(`/billing/invoices/${id}/void/`),
+  restore: (id) => api.post(`/billing/invoices/${id}/restore/`),
+  remove: (id) => api.delete(`/billing/invoices/${id}/`),
 };

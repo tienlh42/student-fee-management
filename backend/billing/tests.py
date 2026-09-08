@@ -18,6 +18,7 @@ from .models import (
     StudentFeePackage,
 )
 from .services import build_draft_lines, due_date_for, generate_invoice
+from payments.services import record_cash_payment
 
 User = get_user_model()
 
@@ -277,6 +278,59 @@ class InvoiceApiTests(BillingApiFixtureMixin, TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         invoice.refresh_from_db()
         self.assertEqual(invoice.status, Invoice.Status.VOID)
+
+    def test_guardian_cannot_restore_invoice(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        invoice.status = Invoice.Status.VOID
+        invoice.save(update_fields=["status"])
+        self.client.force_authenticate(self.guardian_user)
+        response = self.client.post(f"/api/billing/invoices/{invoice.pk}/restore/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_teacher_restores_voided_invoice(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        invoice.status = Invoice.Status.VOID
+        invoice.save(update_fields=["status"])
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(f"/api/billing/invoices/{invoice.pk}/restore/")
+        self.assertEqual(response.status_code, 200, response.data)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.Status.ISSUED)
+
+    def test_cannot_restore_invoice_that_is_not_void(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(f"/api/billing/invoices/{invoice.pk}/restore/")
+        self.assertEqual(response.status_code, 400)
+
+    def test_guardian_cannot_delete_invoice(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.guardian_user)
+        response = self.client.delete(f"/api/billing/invoices/{invoice.pk}/")
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Invoice.objects.filter(pk=invoice.pk).exists())
+
+    def test_teacher_deletes_invoice_allowing_regeneration_same_period(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.delete(f"/api/billing/invoices/{invoice.pk}/")
+        self.assertEqual(response.status_code, 204, response.data)
+        self.assertFalse(Invoice.objects.filter(pk=invoice.pk).exists())
+
+        # Xóa xong thì sinh lại được hóa đơn khác cho đúng kỳ đó (unique constraint không còn vướng).
+        regenerate = self.client.post(
+            "/api/billing/invoices/generate/", {"period": "2026-09"}, format="json"
+        )
+        self.assertEqual(regenerate.status_code, 200, regenerate.data)
+        self.assertEqual(regenerate.data["created"], 1)
+
+    def test_cannot_delete_invoice_with_payment(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        record_cash_payment(invoice, Decimal("100000"), user=self.teacher_user)
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.delete(f"/api/billing/invoices/{invoice.pk}/")
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Invoice.objects.filter(pk=invoice.pk).exists())
 
     def test_adjustment_editable_but_total_amount_is_not(self):
         invoice = generate_invoice(self.student_a, date(2026, 9, 1))
