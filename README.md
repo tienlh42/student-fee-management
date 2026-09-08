@@ -169,7 +169,20 @@ là chuỗi phụ huynh ghi trong nội dung chuyển khoản. Khi webhook SePay
 Thiếu tiền → hóa đơn `partially_paid`. Thừa tiền → phần dư nằm lại ở giao dịch
 (`unallocated_amount`) chờ gán tay bằng `allocate_manually`.
 
-Thu tiền mặt đi qua `record_cash_payment`, **bắt buộc** ghi người thu để truy trách nhiệm.
+Thanh toán thủ công (tiền mặt/chuyển khoản tay/khác) đi qua
+`payments.services.record_manual_payment`, **bắt buộc** ghi người thu để truy
+trách nhiệm. Gọi nhiều lần cho cùng hóa đơn để chia thành nhiều đợt thanh toán
+— API: `POST /api/billing/invoices/{id}/record-payment/`.
+
+### Quản lý thanh toán
+
+- `/transactions` (menu "Đối soát tiền vào"): xem/đối soát `IncomingTransaction`
+  — khớp lại tự động, phân bổ tay, bỏ qua giao dịch không liên quan.
+- `/payments` (menu "Thanh toán"): sổ quỹ — toàn bộ `Payment` đã ghi nhận (tự
+  động lẫn thủ công), lọc theo hình thức/cách khớp, tìm theo mã hóa đơn/tên
+  học sinh.
+- Trong trang Hóa đơn: nút "Thanh toán ngay" (trả đủ số còn nợ trong một lần)
+  và nút mở lịch sử thanh toán (xem lại + ghi thêm từng đợt cho hóa đơn đó).
 
 ## Deploy
 

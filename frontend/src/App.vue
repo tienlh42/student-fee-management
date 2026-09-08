@@ -27,6 +27,12 @@ const nav = computed(() =>
     { label: "Học sinh", icon: "pi pi-users", to: "/students" },
     { label: "Hóa đơn", icon: "pi pi-file", to: "/invoices" },
     {
+      label: "Thanh toán",
+      icon: "pi pi-money-bill",
+      to: "/payments",
+      visible: auth.role.can_see_bank_data,
+    },
+    {
       label: "Đối soát tiền vào",
       icon: "pi pi-wallet",
       to: "/transactions",

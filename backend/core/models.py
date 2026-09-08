@@ -97,7 +97,7 @@ class UserTrackingModel(models.Model):
     trong repo này chủ đích thuần nghiệp vụ, không chạm HTTP request (xem
     README). View là nơi duy nhất biết `request.user` — set qua
     `core.views.UserTrackingViewSetMixin`, hoặc truyền tay xuống service như
-    `billing.services.record_cash_payment` đang làm với `recorded_by_user`.
+    `payments.services.record_manual_payment` đang làm với `recorded_by_user`.
     """
 
     created_by_user = models.ForeignKey(

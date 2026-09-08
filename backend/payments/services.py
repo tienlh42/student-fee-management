@@ -103,18 +103,28 @@ def allocate_manually(
 
 
 @transaction.atomic
-def record_cash_payment(invoice: Invoice, amount: Decimal, *, user, note: str = "") -> Payment:
-    """Thu tiền mặt — không có IncomingTransaction, bắt buộc ghi người thu."""
+def record_manual_payment(
+    invoice: Invoice, amount: Decimal, *, method: str, user, note: str = ""
+) -> Payment:
+    """Ghi nhận thanh toán thủ công — không qua khớp giao dịch ngân hàng tự động
+    (tiền mặt, hoặc chuyển khoản không tới qua webhook). Bắt buộc ghi người thu
+    để truy trách nhiệm.
+
+    Gọi nhiều lần cho cùng một hóa đơn để chia thành nhiều đợt thanh toán —
+    mỗi lần gọi là một `Payment` riêng, `recalculate_status` tự cộng dồn.
+    """
     if amount <= ZERO:
         raise ValueError("Số tiền thu phải lớn hơn 0.")
     if user is None:
-        raise ValueError("Thu tiền mặt bắt buộc ghi nhận người thu.")
+        raise ValueError("Ghi nhận thanh toán bắt buộc kèm người thu.")
+    if method not in Payment.Method.values:
+        raise ValueError("Hình thức thanh toán không hợp lệ.")
 
     payment = Payment.objects.create(
         transaction=None,
         invoice=invoice,
         amount_applied=amount,
-        payment_method=Payment.Method.CASH,
+        payment_method=method,
         matched_by=Payment.MatchedBy.MANUAL,
         recorded_by_user=user,
         note=note,

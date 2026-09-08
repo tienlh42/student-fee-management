@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from django.db.models.deletion import ProtectedError
 from rest_framework import mixins, status, viewsets
@@ -11,7 +12,10 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from accounts.permissions import IsTeacher, IsTeacherOrReadOnly
+from accounts.permissions import CanSeeBankData, IsTeacher, IsTeacherOrReadOnly
+from payments.models import Payment
+from payments.serializers import PaymentSerializer
+from payments.services import record_manual_payment
 from people.models import Student
 from people.permissions import WritableWithinOwnHouse
 from people.services import accessible_students, default_house_id, teacher_house_ids
@@ -241,3 +245,45 @@ class InvoiceViewSet(
         invoice.status = Invoice.Status.ISSUED
         recalculate_status(invoice)
         return Response(InvoiceSerializer(invoice).data)
+
+    @action(detail=True, methods=["post"], url_path="record-payment")
+    def record_payment(self, request, pk=None):
+        """Ghi nhận một đợt thanh toán thủ công (tiền mặt/chuyển khoản/khác).
+
+        Gọi nhiều lần cho cùng hóa đơn để chia thành nhiều đợt — mỗi lần là
+        một `Payment` riêng, cộng dồn vào `paid_amount`.
+        """
+        invoice = self.get_object()
+        if invoice.status == Invoice.Status.VOID:
+            return Response(
+                {"detail": "Hóa đơn đã hủy — khôi phục trước khi ghi nhận thanh toán."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            amount = Decimal(str(request.data.get("amount", "")))
+        except InvalidOperation:
+            return Response({"detail": "Không đọc được số tiền."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            record_manual_payment(
+                invoice,
+                amount,
+                method=request.data.get("method", Payment.Method.CASH),
+                user=request.user,
+                note=request.data.get("note", ""),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        invoice.refresh_from_db()
+        return Response(InvoiceSerializer(invoice).data)
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="payments",
+        permission_classes=[IsAuthenticated, CanSeeBankData],
+    )
+    def payments(self, request, pk=None):
+        invoice = self.get_object()
+        return Response(PaymentSerializer(invoice.payments.all(), many=True).data)

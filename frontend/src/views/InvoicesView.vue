@@ -28,9 +28,11 @@ import {
   studentDiscountsApi,
   studentFeePackagesApi,
 } from "@/api/billing";
+import { paymentsApi } from "@/api/payments";
 import FeeItemFormDialog from "@/components/FeeItemFormDialog.vue";
 import FeePackageFormDialog from "@/components/FeePackageFormDialog.vue";
 import InvoiceGenerateDialog from "@/components/InvoiceGenerateDialog.vue";
+import InvoicePaymentsDialog from "@/components/InvoicePaymentsDialog.vue";
 import StatusLegendDialog from "@/components/StatusLegendDialog.vue";
 import StudentBillingSummaryDialog from "@/components/StudentBillingSummaryDialog.vue";
 import StudentDiscountFormDialog from "@/components/StudentDiscountFormDialog.vue";
@@ -154,6 +156,38 @@ function onInvoicePage(event) {
   invoicePaging.page = event.page + 1;
   invoicePaging.rows = event.rows;
   loadInvoices();
+}
+
+const paymentsVisible = ref(false);
+const selectedInvoiceForPayments = ref(null);
+const paymentDialogMode = ref("installment");
+const paymentMethodOptions = ref([]);
+
+async function loadPaymentMethodOptions() {
+  if (!auth.role.can_see_bank_data) return;
+  try {
+    const meta = await paymentsApi.meta();
+    paymentMethodOptions.value = meta.payment_methods;
+  } catch {
+    paymentMethodOptions.value = [];
+  }
+}
+
+function openPayNow(invoice) {
+  selectedInvoiceForPayments.value = invoice;
+  paymentDialogMode.value = "full";
+  paymentsVisible.value = true;
+}
+
+function openPayments(invoice) {
+  selectedInvoiceForPayments.value = invoice;
+  paymentDialogMode.value = "installment";
+  paymentsVisible.value = true;
+}
+
+async function onPaymentRecorded() {
+  toast.add({ severity: "success", summary: "Đã ghi nhận thanh toán", life: 2500 });
+  await loadInvoices();
 }
 
 async function onGenerated(result) {
@@ -541,6 +575,7 @@ onMounted(async () => {
     loadFeePackages(),
     loadSubscriptions(),
     loadDiscounts(),
+    loadPaymentMethodOptions(),
   ]);
 });
 </script>
@@ -667,7 +702,7 @@ onMounted(async () => {
                 </template>
               </Column>
 
-              <Column header="" style="width: 11rem">
+              <Column header="" style="width: 15.5rem">
                 <template #body="{ data }">
                   <div class="flex justify-end">
                     <Button
@@ -677,6 +712,25 @@ onMounted(async () => {
                       rounded
                       aria-label="Xem chi tiết học sinh"
                       @click="openStudentSummary(data)"
+                    />
+                    <Button
+                      v-if="auth.role.can_see_bank_data && data.status !== 'void' && data.status !== 'paid'"
+                      v-tooltip.top="'Thanh toán ngay (đủ số còn nợ)'"
+                      icon="pi pi-check-circle"
+                      severity="success"
+                      text
+                      rounded
+                      aria-label="Thanh toán ngay"
+                      @click="openPayNow(data)"
+                    />
+                    <Button
+                      v-if="auth.role.can_see_bank_data"
+                      v-tooltip.top="'Chia thành nhiều đợt / lịch sử thanh toán'"
+                      icon="pi pi-wallet"
+                      text
+                      rounded
+                      aria-label="Lịch sử thanh toán"
+                      @click="openPayments(data)"
                     />
                     <Button
                       v-if="auth.canEdit && data.status === 'void'"
@@ -1009,6 +1063,15 @@ onMounted(async () => {
       v-model:visible="studentSummaryVisible"
       :student="selectedStudentForSummary"
       :fee-packages="feePackageRows"
+    />
+
+    <InvoicePaymentsDialog
+      v-model:visible="paymentsVisible"
+      :invoice="selectedInvoiceForPayments"
+      :can-record="auth.canEdit"
+      :mode="paymentDialogMode"
+      :method-options="paymentMethodOptions"
+      @recorded="onPaymentRecorded"
     />
 
     <StatusLegendDialog

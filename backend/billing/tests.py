@@ -18,7 +18,8 @@ from .models import (
     StudentFeePackage,
 )
 from .services import build_draft_lines, due_date_for, generate_invoice
-from payments.services import record_cash_payment
+from payments.models import Payment
+from payments.services import record_manual_payment
 
 User = get_user_model()
 
@@ -326,11 +327,125 @@ class InvoiceApiTests(BillingApiFixtureMixin, TestCase):
 
     def test_cannot_delete_invoice_with_payment(self):
         invoice = generate_invoice(self.student_a, date(2026, 9, 1))
-        record_cash_payment(invoice, Decimal("100000"), user=self.teacher_user)
+        record_manual_payment(
+            invoice, Decimal("100000"), method=Payment.Method.CASH, user=self.teacher_user
+        )
         self.client.force_authenticate(self.teacher_user)
         response = self.client.delete(f"/api/billing/invoices/{invoice.pk}/")
         self.assertEqual(response.status_code, 400)
         self.assertTrue(Invoice.objects.filter(pk=invoice.pk).exists())
+
+    def test_guardian_cannot_record_cash_payment(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.guardian_user)
+        response = self.client.post(
+            f"/api/billing/invoices/{invoice.pk}/record-payment/",
+            {"amount": "1000000"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_teacher_records_cash_payment(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(
+            f"/api/billing/invoices/{invoice.pk}/record-payment/",
+            {"amount": "1000000", "method": "cash", "note": "Thu tại văn phòng"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["status"], Invoice.Status.PARTIALLY_PAID)
+        self.assertEqual(Decimal(response.data["paid_amount"]), Decimal("1000000"))
+
+    def test_teacher_records_bank_transfer_payment(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(
+            f"/api/billing/invoices/{invoice.pk}/record-payment/",
+            {"amount": "1000000", "method": "bank_transfer"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        payment = invoice.payments.get()
+        self.assertEqual(payment.payment_method, Payment.Method.BANK_TRANSFER)
+
+    def test_default_payment_method_is_cash(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(
+            f"/api/billing/invoices/{invoice.pk}/record-payment/",
+            {"amount": "1000000"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(invoice.payments.get().payment_method, Payment.Method.CASH)
+
+    def test_rejects_invalid_payment_method(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(
+            f"/api/billing/invoices/{invoice.pk}/record-payment/",
+            {"amount": "1000000", "method": "bitcoin"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_can_split_payment_into_multiple_installments(self):
+        # Hóa đơn mẫu (BillingApiFixtureMixin) tổng 3.000.000 — chia làm 2 đợt,
+        # cố ý chưa trả đủ để phân biệt được với test "trả đủ" ở trên.
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.teacher_user)
+        self.client.post(
+            f"/api/billing/invoices/{invoice.pk}/record-payment/",
+            {"amount": "1000000", "method": "cash", "note": "Đợt 1"},
+            format="json",
+        )
+        response = self.client.post(
+            f"/api/billing/invoices/{invoice.pk}/record-payment/",
+            {"amount": "1000000", "method": "bank_transfer", "note": "Đợt 2"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(invoice.payments.count(), 2)
+        self.assertEqual(Decimal(response.data["paid_amount"]), Decimal("2000000"))
+        self.assertEqual(response.data["status"], Invoice.Status.PARTIALLY_PAID)
+
+    def test_cannot_record_cash_payment_on_void_invoice(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        invoice.status = Invoice.Status.VOID
+        invoice.save(update_fields=["status"])
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(
+            f"/api/billing/invoices/{invoice.pk}/record-payment/",
+            {"amount": "1000000"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_guardian_cannot_view_payment_history(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        record_manual_payment(
+            invoice, Decimal("500000"), method=Payment.Method.CASH, user=self.teacher_user
+        )
+        self.client.force_authenticate(self.guardian_user)
+        response = self.client.get(f"/api/billing/invoices/{invoice.pk}/payments/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_teacher_views_payment_history(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        record_manual_payment(
+            invoice,
+            Decimal("500000"),
+            method=Payment.Method.CASH,
+            user=self.teacher_user,
+            note="Thu tiền mặt",
+        )
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.get(f"/api/billing/invoices/{invoice.pk}/payments/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(Decimal(response.data[0]["amount_applied"]), Decimal("500000"))
+        self.assertEqual(response.data[0]["payment_method"], "cash")
 
     def test_adjustment_editable_but_total_amount_is_not(self):
         invoice = generate_invoice(self.student_a, date(2026, 9, 1))

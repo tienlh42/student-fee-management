@@ -40,11 +40,18 @@ const routes = [
     component: () => import("../views/InvoicesView.vue"),
   },
   {
+    path: "/payments",
+    name: "payments",
+    // Guardian không bao giờ được thấy dữ liệu ngân hàng (xem README § Phân quyền).
+    meta: { title: "Thanh toán", requiresBankData: true },
+    component: () => import("../views/PaymentsView.vue"),
+  },
+  {
     path: "/transactions",
     name: "transactions",
     // Guardian không bao giờ được thấy dữ liệu ngân hàng (xem README § Phân quyền).
     meta: { title: "Đối soát tiền vào", requiresBankData: true },
-    component: () => import("../views/PlaceholderView.vue"),
+    component: () => import("../views/TransactionsView.vue"),
   },
   {
     path: "/notifications",
