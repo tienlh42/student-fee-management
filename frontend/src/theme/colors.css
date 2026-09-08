@@ -1,0 +1,31 @@
+:root {
+  /* Brand colors */
+  --edufi-red: #C8102E;
+  --edufi-red-hover: #9E0B22;
+  --edufi-gold: #D4AF37;
+  --edufi-gold-hover: #B8941F;
+  --edufi-white: #FFFFFF;
+  --edufi-teal: #0D9488;
+  --edufi-teal-hover: #0F766E;
+
+  /* Text */
+  --edufi-text-primary: #1A1A1A;
+  --edufi-text-secondary: #6B7280;
+
+  /* Status */
+  --edufi-status-paid: #16A34A;
+  --edufi-status-pending: #F59E0B;
+  --edufi-status-overdue: #E11D48;
+
+  /* Surfaces */
+  --edufi-surface: #FFFFFF;
+  --edufi-surface-muted: #FAFAFA;
+  --edufi-border: #E5E7EB;
+
+  /* Buttons */
+  --edufi-button-primary-bg: var(--edufi-teal);
+  --edufi-button-primary-text: var(--edufi-white);
+  --edufi-button-secondary-bg: var(--edufi-white);
+  --edufi-button-secondary-border: var(--edufi-teal);
+  --edufi-button-secondary-text: var(--edufi-teal);
+}

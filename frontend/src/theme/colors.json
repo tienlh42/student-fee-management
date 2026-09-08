@@ -1,0 +1,46 @@
+{
+  "brand": {
+    "red": "#C8102E",
+    "redHover": "#9E0B22",
+    "gold": "#D4AF37",
+    "goldHover": "#B8941F",
+    "white": "#FFFFFF",
+    "teal": "#0D9488",
+    "tealHover": "#0F766E"
+  },
+  "text": {
+    "primary": "#1A1A1A",
+    "secondary": "#6B7280"
+  },
+  "status": {
+    "paid": "#16A34A",
+    "pending": "#F59E0B",
+    "overdue": "#E11D48"
+  },
+  "surface": {
+    "base": "#FFFFFF",
+    "muted": "#FAFAFA",
+    "border": "#E5E7EB"
+  },
+  "button": {
+    "primary": { "background": "#0D9488", "text": "#FFFFFF" },
+    "secondary": { "background": "#FFFFFF", "border": "#0D9488", "text": "#0D9488" }
+  },
+  "typography": {
+    "display": {
+      "family": "Space Grotesk",
+      "googleFontsUrl": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&display=swap",
+      "usage": "Logo, headings"
+    },
+    "body": {
+      "family": "Be Vietnam Pro",
+      "googleFontsUrl": "https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&display=swap",
+      "usage": "Body text, UI copy"
+    },
+    "numeric": {
+      "family": "IBM Plex Mono",
+      "googleFontsUrl": "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;700&display=swap",
+      "usage": "Amounts, invoice numbers, tabular figures"
+    }
+  }
+}
