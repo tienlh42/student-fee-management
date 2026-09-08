@@ -31,6 +31,7 @@ import {
 import FeeItemFormDialog from "@/components/FeeItemFormDialog.vue";
 import FeePackageFormDialog from "@/components/FeePackageFormDialog.vue";
 import InvoiceGenerateDialog from "@/components/InvoiceGenerateDialog.vue";
+import StatusLegendDialog from "@/components/StatusLegendDialog.vue";
 import StudentBillingSummaryDialog from "@/components/StudentBillingSummaryDialog.vue";
 import StudentDiscountFormDialog from "@/components/StudentDiscountFormDialog.vue";
 import StudentFeePackageFormDialog from "@/components/StudentFeePackageFormDialog.vue";
@@ -49,6 +50,43 @@ const STATUS_SEVERITY = {
   paid: "success",
   void: "danger",
 };
+
+const INVOICE_STATUS_HELP = [
+  {
+    value: "draft",
+    label: "Nháp",
+    severity: STATUS_SEVERITY.draft,
+    description:
+      "Hóa đơn vừa được sinh, chưa ghi nhận khoản thu nào. Chỉ chuyển sang trạng thái khác khi có thanh toán.",
+  },
+  {
+    value: "issued",
+    label: "Đã phát hành",
+    severity: STATUS_SEVERITY.issued,
+    description:
+      "Không còn ở trạng thái nháp nhưng cũng chưa thu được đồng nào — thường gặp nhất sau khi khôi phục một hóa đơn đã hủy mà trước đó chưa thu tiền.",
+  },
+  {
+    value: "partially_paid",
+    label: "Thanh toán một phần",
+    severity: STATUS_SEVERITY.partially_paid,
+    description: "Đã thu được một phần số tiền phải thu, vẫn còn nợ.",
+  },
+  {
+    value: "paid",
+    label: "Đã thanh toán",
+    severity: STATUS_SEVERITY.paid,
+    description: "Đã thu đủ số tiền phải thu (sau điều chỉnh/giảm trừ), không còn nợ.",
+  },
+  {
+    value: "void",
+    label: "Đã hủy",
+    severity: STATUS_SEVERITY.void,
+    description:
+      "Hóa đơn bị hủy, không tính vào công nợ và không tự đổi trạng thái nữa. Có thể khôi phục lại — khi đó hệ thống tính lại đúng trạng thái theo số tiền đã thu trước khi hủy.",
+  },
+];
+const invoiceStatusHelpVisible = ref(false);
 
 const activeTab = ref("invoices");
 const studentOptions = ref([]);
@@ -609,7 +647,21 @@ onMounted(async () => {
                 </template>
               </Column>
 
-              <Column field="status" header="Trạng thái" style="width: 10rem">
+              <Column field="status" style="width: 10rem">
+                <template #header>
+                  <span class="inline-flex items-center gap-1">
+                    Trạng thái
+                    <Button
+                      v-tooltip.top="'Ý nghĩa các trạng thái'"
+                      icon="pi pi-question-circle"
+                      text
+                      rounded
+                      size="small"
+                      aria-label="Ý nghĩa các trạng thái"
+                      @click="invoiceStatusHelpVisible = true"
+                    />
+                  </span>
+                </template>
                 <template #body="{ data }">
                   <Tag :value="data.status_display" :severity="STATUS_SEVERITY[data.status]" />
                 </template>
@@ -957,6 +1009,12 @@ onMounted(async () => {
       v-model:visible="studentSummaryVisible"
       :student="selectedStudentForSummary"
       :fee-packages="feePackageRows"
+    />
+
+    <StatusLegendDialog
+      v-model:visible="invoiceStatusHelpVisible"
+      title="Ý nghĩa các trạng thái hóa đơn"
+      :items="INVOICE_STATUS_HELP"
     />
 
     <FeeItemFormDialog

@@ -3,14 +3,15 @@ import { computed, reactive, ref, watch } from "vue";
 
 import Button from "primevue/button";
 import DatePicker from "primevue/datepicker";
-import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import Select from "primevue/select";
 
+import AppDialog from "@/components/AppDialog.vue";
 import { errorMessage, fieldErrors } from "@/api/client";
 import { studentsApi } from "@/api/people";
 import { fromIsoDate, toIsoDate } from "@/utils/date";
+import { useCloseGuard, useDirtyTracking } from "@/utils/dirty";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -49,9 +50,15 @@ const form = reactive(blankForm());
 const saving = ref(false);
 const error = ref("");
 const errors = ref({});
+const { dirty, markClean } = useDirtyTracking(form);
+const { guardedClose } = useCloseGuard();
 
 const isEdit = computed(() => props.student !== null);
 const title = computed(() => (isEdit.value ? "Sửa thông tin học sinh" : "Thêm học sinh"));
+
+function cancel() {
+  guardedClose(dirty.value, () => emit("update:visible", false));
+}
 
 // Cơ sở chỉ cho chọn khi thực sự có nhiều — quy mô hiện tại thường chỉ một.
 const showHousePicker = computed(() => (props.meta.houses?.length ?? 0) > 1);
@@ -74,6 +81,7 @@ watch(
       form.status = props.student.status;
       form.enrolled_date = fromIsoDate(props.student.enrolled_date);
     }
+    markClean();
   },
 );
 
@@ -112,12 +120,12 @@ async function submit() {
 </script>
 
 <template>
-  <Dialog
+  <AppDialog
     :visible="visible"
     :header="title"
-    modal
+    :loading="saving"
+    :dirty="dirty"
     :style="{ width: '46rem' }"
-    :breakpoints="{ '960px': '95vw' }"
     @update:visible="emit('update:visible', $event)"
   >
     <form id="student-form" class="flex flex-col gap-5" @submit.prevent="submit">
@@ -209,7 +217,7 @@ async function submit() {
     </form>
 
     <template #footer>
-      <Button label="Hủy" severity="secondary" text @click="emit('update:visible', false)" />
+      <Button label="Hủy" severity="secondary" text @click="cancel" />
       <Button
         type="submit"
         form="student-form"
@@ -219,5 +227,5 @@ async function submit() {
         :disabled="!form.person.full_name"
       />
     </template>
-  </Dialog>
+  </AppDialog>
 </template>

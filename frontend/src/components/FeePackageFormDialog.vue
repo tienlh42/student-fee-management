@@ -3,15 +3,16 @@ import { computed, reactive, ref, watch } from "vue";
 
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
-import Dialog from "primevue/dialog";
 import InputNumber from "primevue/inputnumber";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import Select from "primevue/select";
 import Textarea from "primevue/textarea";
 
+import AppDialog from "@/components/AppDialog.vue";
 import { errorMessage, fieldErrors } from "@/api/client";
 import { feePackagesApi } from "@/api/billing";
+import { useCloseGuard, useDirtyTracking } from "@/utils/dirty";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -36,9 +37,15 @@ const form = reactive(blankForm());
 const saving = ref(false);
 const error = ref("");
 const errors = ref({});
+const { dirty, markClean } = useDirtyTracking(form);
+const { guardedClose } = useCloseGuard();
 
 const isEdit = computed(() => props.feePackage !== null);
 const title = computed(() => (isEdit.value ? "Sửa gói phí" : "Thêm gói phí"));
+
+function cancel() {
+  guardedClose(dirty.value, () => emit("update:visible", false));
+}
 
 watch(
   () => props.visible,
@@ -54,6 +61,7 @@ watch(
         amount: item.amount,
       }));
     }
+    markClean();
   },
 );
 
@@ -93,12 +101,12 @@ async function submit() {
 </script>
 
 <template>
-  <Dialog
+  <AppDialog
     :visible="visible"
     :header="title"
-    modal
+    :loading="saving"
+    :dirty="dirty"
     :style="{ width: '40rem' }"
-    :breakpoints="{ '960px': '95vw' }"
     @update:visible="emit('update:visible', $event)"
   >
     <form id="fee-package-form" class="flex flex-col gap-4" @submit.prevent="submit">
@@ -183,7 +191,7 @@ async function submit() {
     </form>
 
     <template #footer>
-      <Button label="Hủy" severity="secondary" text @click="emit('update:visible', false)" />
+      <Button label="Hủy" severity="secondary" text @click="cancel" />
       <Button
         type="submit"
         form="fee-package-form"
@@ -193,5 +201,5 @@ async function submit() {
         :disabled="!form.name"
       />
     </template>
-  </Dialog>
+  </AppDialog>
 </template>

@@ -3,13 +3,14 @@ import { reactive, ref, watch } from "vue";
 
 import Button from "primevue/button";
 import DatePicker from "primevue/datepicker";
-import Dialog from "primevue/dialog";
 import Message from "primevue/message";
 import Select from "primevue/select";
 
+import AppDialog from "@/components/AppDialog.vue";
 import { errorMessage } from "@/api/client";
 import { invoicesApi } from "@/api/billing";
 import { toIsoDate } from "@/utils/date";
+import { useCloseGuard, useDirtyTracking } from "@/utils/dirty";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -20,6 +21,12 @@ const emit = defineEmits(["update:visible", "generated"]);
 const form = reactive({ period: new Date(), student: null });
 const saving = ref(false);
 const error = ref("");
+const { dirty, markClean } = useDirtyTracking(form);
+const { guardedClose } = useCloseGuard();
+
+function cancel() {
+  guardedClose(dirty.value, () => emit("update:visible", false));
+}
 
 watch(
   () => props.visible,
@@ -28,6 +35,7 @@ watch(
     error.value = "";
     form.period = new Date();
     form.student = null;
+    markClean();
   },
 );
 
@@ -48,12 +56,12 @@ async function submit() {
 </script>
 
 <template>
-  <Dialog
+  <AppDialog
     :visible="visible"
     header="Sinh hóa đơn theo kỳ"
-    modal
+    :loading="saving"
+    :dirty="dirty"
     :style="{ width: '26rem' }"
-    :breakpoints="{ '960px': '95vw' }"
     @update:visible="emit('update:visible', $event)"
   >
     <form id="invoice-generate-form" class="flex flex-col gap-4" @submit.prevent="submit">
@@ -90,7 +98,7 @@ async function submit() {
     </form>
 
     <template #footer>
-      <Button label="Hủy" severity="secondary" text @click="emit('update:visible', false)" />
+      <Button label="Hủy" severity="secondary" text @click="cancel" />
       <Button
         type="submit"
         form="invoice-generate-form"
@@ -99,5 +107,5 @@ async function submit() {
         :loading="saving"
       />
     </template>
-  </Dialog>
+  </AppDialog>
 </template>

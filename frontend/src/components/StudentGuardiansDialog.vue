@@ -7,11 +7,11 @@ import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
 import Column from "primevue/column";
 import DataTable from "primevue/datatable";
-import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import Select from "primevue/select";
 import Tag from "primevue/tag";
 
+import AppDialog from "@/components/AppDialog.vue";
 import { errorMessage } from "@/api/client";
 import { guardiansApi, studentsApi } from "@/api/people";
 
@@ -128,15 +128,14 @@ const canSubmit = () =>
 </script>
 
 <template>
-  <Dialog
+  <AppDialog
     :visible="visible"
     :header="`Phụ huynh · ${student?.full_name ?? ''}`"
-    modal
+    :loading="loading"
     :style="{ width: '44rem' }"
-    :breakpoints="{ '960px': '95vw' }"
     @update:visible="emit('update:visible', $event)"
   >
-    <DataTable :value="links" :loading="loading" size="small" data-key="id">
+    <DataTable :value="links" size="small" data-key="id">
       <template #empty>
         <span class="text-surface-500 text-sm">Chưa gắn phụ huynh nào.</span>
       </template>
@@ -219,5 +218,5 @@ const canSubmit = () =>
     <template #footer>
       <Button label="Đóng" severity="secondary" text @click="emit('update:visible', false)" />
     </template>
-  </Dialog>
+  </AppDialog>
 </template>

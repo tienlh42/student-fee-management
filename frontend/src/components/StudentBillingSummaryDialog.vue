@@ -1,10 +1,10 @@
 <script setup>
 import { ref, watch } from "vue";
 
-import Dialog from "primevue/dialog";
 import Message from "primevue/message";
 import Tag from "primevue/tag";
 
+import AppDialog from "@/components/AppDialog.vue";
 import { errorMessage } from "@/api/client";
 import { studentDiscountsApi, studentFeePackagesApi } from "@/api/billing";
 import { formatDate } from "@/utils/date";
@@ -53,18 +53,17 @@ watch(
 </script>
 
 <template>
-  <Dialog
+  <AppDialog
     :visible="visible"
     :header="student ? `Chi tiết học phí — ${student.name}` : 'Chi tiết học phí'"
-    modal
+    :loading="loading"
     :style="{ width: '38rem' }"
-    :breakpoints="{ '960px': '95vw' }"
     @update:visible="emit('update:visible', $event)"
   >
     <div class="flex flex-col gap-5">
       <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
 
-      <section v-if="!loading" class="flex flex-col gap-2">
+      <section class="flex flex-col gap-2">
         <h3 class="text-sm font-semibold text-surface-600 dark:text-surface-300">
           Gói phí đang đăng ký
         </h3>
@@ -90,7 +89,7 @@ watch(
         </div>
       </section>
 
-      <section v-if="!loading" class="flex flex-col gap-2">
+      <section class="flex flex-col gap-2">
         <h3 class="text-sm font-semibold text-surface-600 dark:text-surface-300">Giảm trừ</h3>
         <p v-if="!discounts.length" class="text-sm text-surface-500">Chưa có giảm trừ nào.</p>
         <div
@@ -115,8 +114,6 @@ watch(
           />
         </div>
       </section>
-
-      <div v-if="loading" class="py-6 text-center text-sm text-surface-500">Đang tải…</div>
     </div>
-  </Dialog>
+  </AppDialog>
 </template>

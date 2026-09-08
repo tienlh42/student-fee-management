@@ -15,6 +15,7 @@ import Toolbar from "primevue/toolbar";
 
 import { errorMessage } from "@/api/client";
 import { studentsApi } from "@/api/people";
+import StatusLegendDialog from "@/components/StatusLegendDialog.vue";
 import StudentFormDialog from "@/components/StudentFormDialog.vue";
 import StudentGuardiansDialog from "@/components/StudentGuardiansDialog.vue";
 import { useAuthStore } from "@/stores/auth";
@@ -30,6 +31,36 @@ const STATUS_SEVERITY = {
   graduated: "info",
   withdrawn: "danger",
 };
+
+const STUDENT_STATUS_HELP = [
+  {
+    value: "active",
+    label: "Đang học",
+    severity: STATUS_SEVERITY.active,
+    description:
+      "Học sinh đang theo học bình thường. Chỉ học sinh ở trạng thái này mới được đưa vào khi sinh hóa đơn hàng loạt theo kỳ.",
+  },
+  {
+    value: "paused",
+    label: "Tạm nghỉ",
+    severity: STATUS_SEVERITY.paused,
+    description: "Tạm nghỉ học trong một khoảng thời gian, không bị tính vào lần sinh hóa đơn tiếp theo.",
+  },
+  {
+    value: "graduated",
+    label: "Đã tốt nghiệp",
+    severity: STATUS_SEVERITY.graduated,
+    description: "Đã hoàn thành chương trình học, không còn sinh hóa đơn mới.",
+  },
+  {
+    value: "withdrawn",
+    label: "Đã nghỉ",
+    severity: STATUS_SEVERITY.withdrawn,
+    description:
+      "Đã thôi học. Học sinh không bị xóa khỏi hệ thống (hóa đơn cũ vẫn cần giữ lại) — chỉ đổi sang trạng thái này.",
+  },
+];
+const statusHelpVisible = ref(false);
 
 const rows = ref([]);
 const total = ref(0);
@@ -247,7 +278,21 @@ onMounted(async () => {
         <template #body="{ data }">{{ formatDate(data.enrolled_date) }}</template>
       </Column>
 
-      <Column field="status" header="Trạng thái" style="width: 9rem">
+      <Column field="status" style="width: 9rem">
+        <template #header>
+          <span class="inline-flex items-center gap-1">
+            Trạng thái
+            <Button
+              v-tooltip.top="'Ý nghĩa các trạng thái'"
+              icon="pi pi-question-circle"
+              text
+              rounded
+              size="small"
+              aria-label="Ý nghĩa các trạng thái"
+              @click="statusHelpVisible = true"
+            />
+          </span>
+        </template>
         <template #body="{ data }">
           <Tag :value="data.status_display" :severity="STATUS_SEVERITY[data.status]" />
         </template>
@@ -301,6 +346,12 @@ onMounted(async () => {
       :meta="meta"
       :can-edit="auth.canEdit"
       @changed="load"
+    />
+
+    <StatusLegendDialog
+      v-model:visible="statusHelpVisible"
+      title="Ý nghĩa các trạng thái học sinh"
+      :items="STUDENT_STATUS_HELP"
     />
   </div>
 </template>
