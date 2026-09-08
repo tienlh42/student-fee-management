@@ -28,7 +28,9 @@ if (-not (Test-Path ".env")) {
 }
 
 function Test-DockerRunning {
+    $ErrorActionPreference = "Continue"
     docker info *> $null
+    $ErrorActionPreference = "Stop"
     return $LASTEXITCODE -eq 0
 }
 
@@ -60,7 +62,7 @@ function Wait-Backend {
     $waited = 0
     while ($true) {
         try {
-            Invoke-WebRequest -Uri "http://localhost:8000/api/accounts/me/" -UseBasicParsing -TimeoutSec 3 | Out-Null
+            Invoke-WebRequest -Uri "http://localhost:8001/api/accounts/me/" -UseBasicParsing -TimeoutSec 3 | Out-Null
             return $true
         } catch {
             if ($_.Exception.Response) { return $true }
@@ -108,4 +110,4 @@ Start-Process powershell -ArgumentList @(
 )
 
 Write-Host ""
-Write-Host "Da khoi dong xong. Mo http://localhost:8000" -ForegroundColor Green
+Write-Host "Da khoi dong xong. Mo http://localhost:8001" -ForegroundColor Green

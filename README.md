@@ -75,14 +75,20 @@ Terminal 2 — Vite dev server (chạy trên host, có HMR):
 cd frontend && npm install && npm run dev
 ```
 
-Mở http://localhost:8000 — Django render `templates/index.html`, `django-vite` trỏ thẻ
+Mở http://localhost:8001 — Django render `templates/index.html`, `django-vite` trỏ thẻ
 `<script>` về Vite ở cổng 5173. Sửa file `.vue` thấy hot-reload ngay.
+
+Port host `5433`/`8001` (thay vì mặc định `5432`/`8000`) để tránh đụng service khác đã
+chiếm hai cổng đó trên máy dev — container bên trong vẫn dùng `5432`/`8000` như cũ.
 
 ### Dữ liệu mẫu
 
 ```bash
 docker compose -f docker-compose.dev.yml exec web python manage.py seed_demo
 ```
+
+Windows, backend đã chạy sẵn: `.\scripts\seed.ps1` (hoặc double-click `scripts/seed.bat`).
+Tuỳ chọn tương ứng: `-Students`, `-Invoices`, `-Reset`, `-Force`.
 
 Dựng cơ sở, biểu phí, 12 học sinh kèm phụ huynh và ba tài khoản đăng nhập:
 
@@ -113,17 +119,17 @@ Tạo tài khoản quản trị:
 docker compose -f docker-compose.dev.yml exec web python manage.py createsuperuser
 ```
 
-Django admin ở http://localhost:8000/admin/ — đã đăng ký đầy đủ 6 app, đủ dùng để nhập
+Django admin ở http://localhost:8001/admin/ — đã đăng ký đầy đủ 6 app, đủ dùng để nhập
 liệu và kiểm thử nghiệp vụ trước khi có màn hình Vue thật.
 
 ### Kết nối DB bằng GUI (DBeaver / extension PostgreSQL của VS Code)
 
-`docker-compose.dev.yml` expose cổng 5432 ra host, nên client kết nối thẳng:
+`docker-compose.dev.yml` expose cổng 5433 ra host, nên client kết nối thẳng:
 
 | Trường | Giá trị |
 | --- | --- |
 | Host | `localhost` |
-| Port | `5432` |
+| Port | `5433` |
 | Database | `hocphi` |
 | User | `hocphi_user` |
 | Password | `changeme` (theo `.env`) |
