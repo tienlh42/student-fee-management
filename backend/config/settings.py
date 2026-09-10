@@ -16,6 +16,11 @@ DEBUG = env("DJANGO_DEBUG", cast=bool, default=False)
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS", cast=Csv(), default="localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env("DJANGO_CSRF_TRUSTED_ORIGINS", cast=Csv(), default="")
 
+# Đường dẫn Django admin — đổi khỏi "admin/" mặc định để đỡ bị bot dò quét.
+# Không lộ ra frontend (JS bundle là công khai, kể cả trước khi đăng nhập) —
+# ai cần vào tự lưu URL, xem README.
+DJANGO_ADMIN_URL = env("DJANGO_ADMIN_URL", default="qt-he-thong-4f9a2c/")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

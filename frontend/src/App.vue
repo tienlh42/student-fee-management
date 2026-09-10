@@ -1,23 +1,37 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import Avatar from "primevue/avatar";
 import Button from "primevue/button";
 import ConfirmDialog from "primevue/confirmdialog";
 import Menu from "primevue/menu";
+import Select from "primevue/select";
 import Tag from "primevue/tag";
 import Toast from "primevue/toast";
 
 import BrandLogo from "@/components/BrandLogo.vue";
 import { useAuthStore } from "@/stores/auth";
+import { useHouseScopeStore } from "@/stores/houseScope";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const houseScope = useHouseScopeStore();
 
 const sidebarOpen = ref(true);
 const userMenu = ref();
+
+// Tải danh sách cơ sở ngay khi đăng nhập xong — để chọn ở header là dùng
+// được trên mọi trang, không phải chờ mở từng trang mới tải.
+watch(
+  () => auth.isAuthenticated,
+  (loggedIn) => {
+    if (loggedIn) houseScope.ensureLoaded();
+    else houseScope.reset();
+  },
+  { immediate: true },
+);
 
 // Route /login tự dựng layout riêng — không bọc sidebar/header quanh nó.
 const bare = computed(() => route.meta.blank === true || !auth.isAuthenticated);
@@ -40,6 +54,7 @@ const nav = computed(() =>
       visible: auth.role.can_see_bank_data,
     },
     { label: "Thông báo", icon: "pi pi-bell", to: "/notifications" },
+    { label: "Quản trị", icon: "pi pi-shield", to: "/admin", visible: auth.role.is_superuser },
   ].filter((item) => item.visible !== false),
 );
 
@@ -66,12 +81,6 @@ const userMenuItems = computed(() => [
     label: "Hồ sơ cá nhân",
     icon: "pi pi-user-edit",
     command: () => router.push("/profile"),
-  },
-  {
-    label: "Quản trị Django",
-    icon: "pi pi-external-link",
-    visible: auth.role.is_staff_admin,
-    command: () => window.open("/admin/", "_blank", "noopener"),
   },
   { separator: true },
   { label: "Đăng xuất", icon: "pi pi-sign-out", command: signOut },
@@ -151,6 +160,17 @@ async function signOut() {
         </Transition>
 
         <div class="ml-auto flex items-center gap-2">
+          <Select
+            v-if="houseScope.options.length > 1"
+            v-model="houseScope.houseId"
+            :options="houseScope.options"
+            option-label="label"
+            option-value="value"
+            placeholder="Toàn bộ cơ sở"
+            show-clear
+            size="small"
+            class="w-48"
+          />
           <Tag :value="roleLabel" severity="secondary" />
           <Button
             text

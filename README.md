@@ -119,8 +119,10 @@ Tạo tài khoản quản trị:
 docker compose -f docker-compose.dev.yml exec web python manage.py createsuperuser
 ```
 
-Django admin ở http://localhost:8001/admin/ — đã đăng ký đầy đủ 6 app, đủ dùng để nhập
-liệu và kiểm thử nghiệp vụ trước khi có màn hình Vue thật.
+Django admin ở `http://localhost:8001/<DJANGO_ADMIN_URL>` — đường dẫn đổi được qua biến
+môi trường `DJANGO_ADMIN_URL` (mặc định không phải `/admin/` để đỡ bị bot dò quét, xem
+`.env.example`) — đã đăng ký đầy đủ 6 app, đủ dùng để nhập liệu và kiểm thử nghiệp vụ
+trước khi có màn hình Vue thật.
 
 ### Kết nối DB bằng GUI (DBeaver / extension PostgreSQL của VS Code)
 

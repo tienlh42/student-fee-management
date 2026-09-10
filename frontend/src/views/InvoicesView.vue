@@ -40,10 +40,12 @@ import StudentBillingSummaryDialog from "@/components/StudentBillingSummaryDialo
 import StudentDiscountFormDialog from "@/components/StudentDiscountFormDialog.vue";
 import StudentFeePackageFormDialog from "@/components/StudentFeePackageFormDialog.vue";
 import { useAuthStore } from "@/stores/auth";
+import { useHouseScopeStore } from "@/stores/houseScope";
 import { formatDate, toIsoDate } from "@/utils/date";
 import { formatMoney, formatPeriod } from "@/utils/money";
 
 const auth = useAuthStore();
+const houseScope = useHouseScopeStore();
 const toast = useToast();
 const confirm = useConfirm();
 
@@ -118,6 +120,7 @@ async function loadInvoices() {
       search: invoiceFilters.search,
       status: invoiceFilters.status,
       period: invoiceFilters.period ? toIsoDate(invoiceFilters.period).slice(0, 8) + "01" : null,
+      house: houseScope.houseId,
       page: invoicePaging.page,
       page_size: invoicePaging.rows,
     });
@@ -149,10 +152,13 @@ watch(
     }, 300);
   },
 );
-watch([() => invoiceFilters.status, () => invoiceFilters.period], () => {
-  invoicePaging.page = 1;
-  loadInvoices();
-});
+watch(
+  [() => invoiceFilters.status, () => invoiceFilters.period, () => houseScope.houseId],
+  () => {
+    invoicePaging.page = 1;
+    loadInvoices();
+  },
+);
 
 function onInvoicePage(event) {
   invoicePaging.page = event.page + 1;

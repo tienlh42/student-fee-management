@@ -150,6 +150,8 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
             queryset = queryset.filter(matched_by=matched_by)
         if invoice := params.get("invoice"):
             queryset = queryset.filter(invoice_id=invoice)
+        if house := params.get("house"):
+            queryset = queryset.filter(invoice__house_id=house)
         return queryset
 
     @action(detail=False, methods=["get"], url_path="meta")

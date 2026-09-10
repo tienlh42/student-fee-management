@@ -1,11 +1,13 @@
 """Serializer cho đăng nhập, thông tin người dùng hiện tại và hồ sơ cá nhân."""
 
 from django.contrib.auth import authenticate
+from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
+from django.utils.crypto import get_random_string
 from rest_framework import serializers
 
 from .models import User
-from .services import role_for
+from .services import role_for, save_user_role
 
 
 class LoginSerializer(serializers.Serializer):
@@ -43,6 +45,7 @@ class RoleSerializer(serializers.Serializer):
     is_guardian = serializers.BooleanField()
     can_see_bank_data = serializers.BooleanField()
     can_manage_houses = serializers.BooleanField()
+    can_manage_users = serializers.BooleanField()
 
 
 class HouseMembershipSerializer(serializers.Serializer):
@@ -155,3 +158,105 @@ class ProfileSerializer(serializers.Serializer):
 
         user.save()
         return user
+
+
+class UserSerializer(serializers.ModelSerializer):
+    """CRUD tài khoản đăng nhập cho màn Quản trị (root/superuser).
+
+    `role_kind`/`role_house`/`role_full_name` không phải field của `User` —
+    chỉ input để `save_user_role` (accounts/services.py) gán/gỡ Teacher hay
+    Guardian gắn với `person` của tài khoản, trong cùng một request.
+    """
+
+    password = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, style={"input_type": "password"}
+    )
+    person_id = serializers.IntegerField(read_only=True)
+    person_full_name = serializers.CharField(
+        source="person.full_name", read_only=True, default=""
+    )
+    role_kind = serializers.ChoiceField(
+        choices=["teacher", "guardian", ""], write_only=True, required=False, allow_blank=True
+    )
+    role_house = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    role_full_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    current_role = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "email",
+            "is_active",
+            "is_staff",
+            "is_superuser",
+            "password",
+            "person_id",
+            "person_full_name",
+            "current_role",
+            "role_kind",
+            "role_house",
+            "role_full_name",
+            "date_joined",
+            "last_login",
+        ]
+        read_only_fields = ["id", "date_joined", "last_login"]
+
+    def get_current_role(self, obj) -> dict:
+        """Vai trò *hiện tại* (đọc) — khác `role_kind` (input để đổi vai trò).
+        Dùng để điền sẵn form sửa và hiển thị cột "Vai trò" ở danh sách."""
+        from people.models import Guardian, Teacher
+
+        if obj.person_id is None:
+            return {"kind": "", "house": None, "house_name": ""}
+
+        teacher = Teacher.objects.filter(pk=obj.person_id).select_related("house").first()
+        if teacher is not None:
+            return {"kind": "teacher", "house": teacher.house_id, "house_name": teacher.house.name}
+
+        if Guardian.objects.filter(pk=obj.person_id).exists():
+            return {"kind": "guardian", "house": None, "house_name": ""}
+
+        return {"kind": "", "house": None, "house_name": ""}
+
+    def validate_password(self, value):
+        if value:
+            validate_password(value)
+        return value
+
+    @transaction.atomic
+    def create(self, validated_data):
+        role_kind = validated_data.pop("role_kind", "")
+        role_house = validated_data.pop("role_house", None)
+        role_full_name = validated_data.pop("role_full_name", "")
+        password = validated_data.pop("password", "") or None
+
+        user = User(**validated_data)
+        user.set_password(password or get_random_string(32))
+        user.save()
+
+        if role_kind:
+            save_user_role(
+                user, kind=role_kind, house_id=role_house, full_name=role_full_name
+            )
+        return user
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        role_kind = validated_data.pop("role_kind", None)
+        role_house = validated_data.pop("role_house", None)
+        role_full_name = validated_data.pop("role_full_name", "")
+        password = validated_data.pop("password", "")
+
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+
+        if role_kind is not None:
+            save_user_role(
+                instance, kind=role_kind, house_id=role_house, full_name=role_full_name
+            )
+        return instance

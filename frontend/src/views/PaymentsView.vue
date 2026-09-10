@@ -13,10 +13,12 @@ import { errorMessage } from "@/api/client";
 import { paymentsApi } from "@/api/payments";
 import AppDataTable from "@/components/AppDataTable.vue";
 import StatusTag from "@/components/StatusTag.vue";
+import { useHouseScopeStore } from "@/stores/houseScope";
 import { formatDateTime } from "@/utils/date";
 import { formatMoney } from "@/utils/money";
 
 const toast = useToast();
+const houseScope = useHouseScopeStore();
 
 const MATCHED_BY_SEVERITY = { auto: "info", manual: "secondary" };
 
@@ -34,6 +36,7 @@ async function load() {
       search: filters.search,
       payment_method: filters.payment_method,
       matched_by: filters.matched_by,
+      house: houseScope.houseId,
       page: paging.page,
       page_size: paging.rows,
     });
@@ -65,10 +68,13 @@ watch(
     }, 300);
   },
 );
-watch([() => filters.payment_method, () => filters.matched_by], () => {
-  paging.page = 1;
-  load();
-});
+watch(
+  [() => filters.payment_method, () => filters.matched_by, () => houseScope.houseId],
+  () => {
+    paging.page = 1;
+    load();
+  },
+);
 
 function onPage(event) {
   paging.page = event.page + 1;

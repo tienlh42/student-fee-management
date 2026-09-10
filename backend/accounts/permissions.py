@@ -47,3 +47,17 @@ class CanManageHouses(BasePermission):
         if request.method in SAFE_METHODS:
             return True
         return role_for(request.user).can_manage_houses
+
+
+class CanManageUsers(BasePermission):
+    """Đọc lẫn ghi đều chỉ dành cho superuser.
+
+    Khác `CanManageHouses` (đọc mở cho mọi người đăng nhập) — danh sách tài
+    khoản (username/email/quyền hạn) nhạy cảm hơn danh sách cơ sở, không có
+    lý do gì để lộ cho teacher/guardian, kể cả ở dạng chỉ đọc.
+    """
+
+    message = "Chỉ quản trị viên cấp cao mới được quản lý tài khoản."
+
+    def has_permission(self, request, view):
+        return role_for(request.user).can_manage_users

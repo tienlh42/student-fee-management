@@ -154,7 +154,10 @@ class GuardianViewSet(ScopedModelViewSet):
     ordering = ["person__full_name"]
 
     def get_queryset(self):
-        return accessible_guardians(self.request.user).select_related("person")
+        queryset = accessible_guardians(self.request.user).select_related("person")
+        if house := self.request.query_params.get("house"):
+            queryset = queryset.filter(student_links__student__house_id=house).distinct()
+        return queryset
 
 
 class TeacherViewSet(ScopedModelViewSet):
@@ -163,7 +166,10 @@ class TeacherViewSet(ScopedModelViewSet):
     ordering = ["person__full_name"]
 
     def get_queryset(self):
-        return accessible_teachers(self.request.user).select_related("person", "house")
+        queryset = accessible_teachers(self.request.user).select_related("person", "house")
+        if house := self.request.query_params.get("house"):
+            queryset = queryset.filter(house_id=house)
+        return queryset
 
 
 class TeachingAssignmentViewSet(ScopedModelViewSet):

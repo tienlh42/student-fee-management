@@ -26,3 +26,7 @@ export const guardiansApi = {
   list: (params = {}) => api.get(`/people/guardians/${query(params)}`),
   create: (payload) => api.post("/people/guardians/", payload),
 };
+
+export const teachersApi = {
+  list: (params = {}) => api.get(`/people/teachers/${query(params)}`),
+};

@@ -19,9 +19,11 @@ import StatusTag from "@/components/StatusTag.vue";
 import StudentFormDialog from "@/components/StudentFormDialog.vue";
 import StudentGuardiansDialog from "@/components/StudentGuardiansDialog.vue";
 import { useAuthStore } from "@/stores/auth";
+import { useHouseScopeStore } from "@/stores/houseScope";
 import { formatDate } from "@/utils/date";
 
 const auth = useAuthStore();
+const houseScope = useHouseScopeStore();
 const toast = useToast();
 const confirm = useConfirm();
 
@@ -85,6 +87,7 @@ async function load() {
       search: filters.search,
       status: filters.status,
       class_grade: filters.class_grade,
+      house: houseScope.houseId,
       page: paging.page,
       page_size: paging.rows,
     });
@@ -118,7 +121,7 @@ watch(
   },
 );
 
-watch([() => filters.status, () => filters.class_grade], () => {
+watch([() => filters.status, () => filters.class_grade, () => houseScope.houseId], () => {
   paging.page = 1;
   load();
 });

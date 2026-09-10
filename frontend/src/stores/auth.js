@@ -6,10 +6,13 @@ import { api } from "@/api/client";
 // Vai trò do backend suy ra từ dữ liệu (accounts/services.py:role_for), không
 // phải field trong DB — frontend chỉ đọc, không bao giờ tự suy diễn lại.
 const EMPTY_ROLE = {
+  is_superuser: false,
   is_staff_admin: false,
   is_teacher: false,
   is_guardian: false,
   can_see_bank_data: false,
+  can_manage_houses: false,
+  can_manage_users: false,
 };
 
 export const useAuthStore = defineStore("auth", () => {

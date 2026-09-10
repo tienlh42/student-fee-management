@@ -8,12 +8,21 @@ với request đã đăng nhập. Login là request *chưa* đăng nhập nên p
 from django.contrib.auth import login as django_login, logout as django_logout
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
-from rest_framework import status
+from rest_framework import status, viewsets
+from rest_framework.exceptions import ValidationError
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .serializers import CurrentUserSerializer, LoginSerializer, ProfileSerializer
+from .models import User
+from .permissions import CanManageUsers
+from .serializers import (
+    CurrentUserSerializer,
+    LoginSerializer,
+    ProfileSerializer,
+    UserSerializer,
+)
 
 
 @method_decorator(csrf_protect, name="dispatch")
@@ -101,3 +110,59 @@ class ProfileView(APIView):
         serializer.save()
         # Đọc lại từ instance đã lưu để trả về đúng cả Person vừa được tạo.
         return Response(ProfileSerializer(request.user).data)
+
+
+class UserViewSet(viewsets.ModelViewSet):
+    """CRUD tài khoản đăng nhập — chỉ superuser (`CanManageUsers`) đọc/ghi được.
+
+    Tự khóa/tự hạ quyền chính mình, hay xóa/hạ quyền superuser cuối cùng còn
+    hoạt động, đều bị chặn — mất quyền root là sự cố không tự cứu được ở một
+    app quản lý tiền.
+    """
+
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated, CanManageUsers]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ["username", "email", "person__full_name"]
+    ordering = ["username"]
+
+    def get_queryset(self):
+        queryset = User.objects.select_related("person").order_by("username")
+        if house := self.request.query_params.get("house"):
+            # Chỉ khớp tài khoản có vai trò Giáo viên ở đúng cơ sở đó — Guardian/
+            # tài khoản chưa gán vai trò không gắn với cơ sở nào nên bị loại khi lọc.
+            queryset = queryset.filter(person__teacher__house_id=house)
+        return queryset
+
+    def _require_another_active_superuser(self, instance):
+        still_has_one = (
+            User.objects.filter(is_superuser=True, is_active=True)
+            .exclude(pk=instance.pk)
+            .exists()
+        )
+        if not still_has_one:
+            raise ValidationError(
+                "Phải còn ít nhất một quản trị viên cấp cao đang hoạt động."
+            )
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        data = serializer.validated_data
+        acting_on_self = instance.pk == self.request.user.pk
+        will_deactivate = data.get("is_active") is False and instance.is_active
+        will_demote = data.get("is_superuser") is False and instance.is_superuser
+
+        if acting_on_self and (will_deactivate or will_demote):
+            raise ValidationError(
+                "Không thể tự khóa hoặc tự hạ quyền tài khoản đang đăng nhập."
+            )
+        if instance.is_superuser and (will_deactivate or will_demote):
+            self._require_another_active_superuser(instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.pk == self.request.user.pk:
+            raise ValidationError("Không thể tự xóa tài khoản đang đăng nhập.")
+        if instance.is_superuser:
+            self._require_another_active_superuser(instance)
+        instance.delete()

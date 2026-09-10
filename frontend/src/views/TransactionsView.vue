@@ -18,11 +18,13 @@ import StatusLegendDialog from "@/components/StatusLegendDialog.vue";
 import StatusTag from "@/components/StatusTag.vue";
 import { errorMessage } from "@/api/client";
 import { incomingTransactionsApi } from "@/api/payments";
+import { useHouseScopeStore } from "@/stores/houseScope";
 import { formatDateTime } from "@/utils/date";
 import { formatMoney } from "@/utils/money";
 
 const toast = useToast();
 const confirm = useConfirm();
+const houseScope = useHouseScopeStore();
 
 const STATUS_SEVERITY = {
   unmatched: "warn",
@@ -80,6 +82,7 @@ async function load() {
     const page = await incomingTransactionsApi.list({
       search: filters.search,
       status: filters.status,
+      house: houseScope.houseId,
       page: paging.page,
       page_size: paging.rows,
     });
@@ -111,13 +114,10 @@ watch(
     }, 300);
   },
 );
-watch(
-  () => filters.status,
-  () => {
-    paging.page = 1;
-    load();
-  },
-);
+watch([() => filters.status, () => houseScope.houseId], () => {
+  paging.page = 1;
+  load();
+});
 
 function onPage(event) {
   paging.page = event.page + 1;

@@ -60,6 +60,13 @@ const routes = [
     component: () => import("../views/PlaceholderView.vue"),
   },
   {
+    path: "/admin",
+    name: "admin",
+    // Chỉ superuser — CRUD Cơ sở & Tài khoản (xem accounts.permissions.CanManageUsers/CanManageHouses).
+    meta: { title: "Quản trị", requiresSuperuser: true },
+    component: () => import("../views/AdminView.vue"),
+  },
+  {
     path: "/:pathMatch(.*)*",
     name: "not-found",
     meta: { title: "Không tìm thấy" },
@@ -87,6 +94,10 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.requiresBankData && !auth.role.can_see_bank_data) {
+    return { path: "/" };
+  }
+
+  if (to.meta.requiresSuperuser && !auth.role.is_superuser) {
     return { path: "/" };
   }
 

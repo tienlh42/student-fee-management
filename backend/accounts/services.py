@@ -6,6 +6,8 @@ Person của request.user để suy ra phạm vi truy cập.
 
 from dataclasses import dataclass
 
+from django.db import transaction
+
 
 @dataclass(frozen=True)
 class Role:
@@ -26,6 +28,16 @@ class Role:
         """Đổi/thêm/xóa cơ sở là việc của riêng superuser — teacher không đụng vào."""
         return self.is_superuser
 
+    @property
+    def can_manage_users(self) -> bool:
+        """CRUD tài khoản đăng nhập cũng là việc của riêng superuser.
+
+        Tách riêng khỏi `can_manage_houses` dù hiện cùng bằng `is_superuser` —
+        hai khả năng khái niệm khác nhau (cấu trúc cơ sở vs. tài khoản đăng
+        nhập), có thể tách rời sau này.
+        """
+        return self.is_superuser
+
 
 def role_for(user) -> Role:
     base = {
@@ -44,3 +56,59 @@ def role_for(user) -> Role:
         is_teacher=Teacher.objects.filter(person_id=person_id).exists(),
         is_guardian=Guardian.objects.filter(person_id=person_id).exists(),
     )
+
+
+@transaction.atomic
+def save_user_role(user, *, kind: str, house_id: int | None, full_name: str) -> None:
+    """Gán/gỡ vai trò Teacher/Guardian của `user` — dùng bởi màn Quản trị tài
+    khoản (root). Chỉ gọi sau khi `CanManageUsers` đã chặn ở view — vì vậy
+    KHÔNG gọi `people.services.can_write_in_house` (chặn teacher ghi chéo cơ
+    sở, không áp dụng cho root, root được gán house bất kỳ).
+
+    `kind` rỗng = gỡ vai trò hiện có (soft delete, giữ lịch sử). `"teacher"`/
+    `"guardian"` = gán vai trò đó, tạo `Person` nếu user chưa có, và khôi phục
+    lại bản ghi Teacher/Guardian cũ (qua `all_objects`) thay vì tạo mới —
+    `person` là PK nên tạo mới đè lên bản ghi đã xóa mềm sẽ đụng IntegrityError.
+    """
+    from people.models import Guardian, Person, Teacher
+
+    if kind not in ("teacher", "guardian", "", None):
+        raise ValueError("Vai trò không hợp lệ.")
+
+    if not kind:
+        if user.person_id:
+            Teacher.objects.filter(pk=user.person_id).delete()
+            Guardian.objects.filter(pk=user.person_id).delete()
+        return
+
+    if not full_name:
+        raise ValueError("Cần nhập họ tên khi gán vai trò.")
+
+    if user.person_id:
+        person = user.person
+        person.full_name = full_name
+        person.save(update_fields=["full_name"])
+    else:
+        person = Person.objects.create(full_name=full_name)
+        user.person = person
+        user.save(update_fields=["person"])
+
+    if kind == "teacher":
+        if not house_id:
+            raise ValueError("Cần chọn cơ sở cho giáo viên.")
+        Guardian.objects.filter(pk=person.pk).delete()
+        teacher = Teacher.all_objects.filter(pk=person.pk).first()
+        if teacher is None:
+            Teacher.objects.create(person=person, house_id=house_id)
+        else:
+            if teacher.is_deleted:
+                teacher.restore()
+            teacher.house_id = house_id
+            teacher.save(update_fields=["house_id"])
+    else:
+        Teacher.objects.filter(pk=person.pk).delete()
+        guardian = Guardian.all_objects.filter(pk=person.pk).first()
+        if guardian is None:
+            Guardian.objects.create(person=person)
+        elif guardian.is_deleted:
+            guardian.restore()
