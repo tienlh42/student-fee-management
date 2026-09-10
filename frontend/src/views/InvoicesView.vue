@@ -53,6 +53,7 @@ const STATUS_SEVERITY = {
   issued: "info",
   partially_paid: "warn",
   paid: "success",
+  fully_refunded: "contrast",
   void: "danger",
 };
 
@@ -82,6 +83,13 @@ const INVOICE_STATUS_HELP = [
     label: "Đã thanh toán",
     severity: STATUS_SEVERITY.paid,
     description: "Đã thu đủ số tiền phải thu (sau điều chỉnh/giảm trừ), không còn nợ.",
+  },
+  {
+    value: "fully_refunded",
+    label: "Đã hoàn đủ",
+    severity: STATUS_SEVERITY.fully_refunded,
+    description:
+      "Từng thu tiền nhưng đã hoàn lại toàn bộ số đã thu — không còn giữ đồng nào của khoản này. Khác với hóa đơn chưa từng thu tiền, giữ lại để đối soát lịch sử. Không hủy hóa đơn được nữa.",
   },
   {
     value: "void",
@@ -163,7 +171,6 @@ function onInvoicePage(event) {
 
 const paymentsVisible = ref(false);
 const selectedInvoiceForPayments = ref(null);
-const paymentDialogMode = ref("installment");
 const paymentMethodOptions = ref([]);
 
 async function loadPaymentMethodOptions() {
@@ -176,15 +183,8 @@ async function loadPaymentMethodOptions() {
   }
 }
 
-function openPayNow(invoice) {
-  selectedInvoiceForPayments.value = invoice;
-  paymentDialogMode.value = "full";
-  paymentsVisible.value = true;
-}
-
 function openPayments(invoice) {
   selectedInvoiceForPayments.value = invoice;
-  paymentDialogMode.value = "installment";
   paymentsVisible.value = true;
 }
 
@@ -699,7 +699,7 @@ onMounted(async () => {
               </Column>
 
               <Column header="Đã thu" style="width: 9rem">
-                <template #body="{ data }">{{ formatMoney(data.paid_amount) }}</template>
+                <template #body="{ data }">{{ formatMoney(data.net_paid) }}</template>
               </Column>
 
               <Column header="Còn nợ" style="width: 9rem">
@@ -742,22 +742,16 @@ onMounted(async () => {
                       @click="openStudentSummary(data)"
                     />
                     <Button
-                      v-if="auth.role.can_see_bank_data && data.status !== 'void' && data.status !== 'paid'"
-                      v-tooltip.top="'Thanh toán ngay (đủ số còn nợ)'"
-                      icon="pi pi-check-circle"
-                      severity="success"
-                      text
-                      rounded
-                      aria-label="Thanh toán ngay"
-                      @click="openPayNow(data)"
-                    />
-                    <Button
                       v-if="auth.role.can_see_bank_data"
-                      v-tooltip.top="'Chia thành nhiều đợt / lịch sử thanh toán'"
+                      v-tooltip.top="
+                        data.status === 'paid' || data.status === 'fully_refunded'
+                          ? 'Xem chi tiết hóa đơn / lịch sử thanh toán'
+                          : 'Thanh toán / lịch sử thanh toán'
+                      "
                       icon="pi pi-wallet"
                       text
                       rounded
-                      aria-label="Lịch sử thanh toán"
+                      aria-label="Thanh toán / lịch sử thanh toán"
                       @click="openPayments(data)"
                     />
                     <Button
@@ -780,7 +774,12 @@ onMounted(async () => {
                       @click="confirmRestore(data)"
                     />
                     <Button
-                      v-if="auth.canEdit && data.status !== 'void' && data.status !== 'paid'"
+                      v-if="
+                        auth.canEdit &&
+                        data.status !== 'void' &&
+                        data.status !== 'paid' &&
+                        data.status !== 'fully_refunded'
+                      "
                       v-tooltip.top="'Hủy hóa đơn'"
                       icon="pi pi-ban"
                       severity="danger"
@@ -790,7 +789,7 @@ onMounted(async () => {
                       @click="confirmVoid(data)"
                     />
                     <Button
-                      v-if="auth.canEdit"
+                      v-if="auth.canEdit && data.status === 'draft'"
                       v-tooltip.top="'Xóa hóa đơn (để sinh lại kỳ này)'"
                       icon="pi pi-trash"
                       severity="danger"
@@ -1106,8 +1105,11 @@ onMounted(async () => {
     <InvoicePaymentsDialog
       v-model:visible="paymentsVisible"
       :invoice="selectedInvoiceForPayments"
-      :can-record="auth.canEdit"
-      :mode="paymentDialogMode"
+      :can-record="
+        auth.canEdit &&
+        selectedInvoiceForPayments?.status !== 'paid' &&
+        selectedInvoiceForPayments?.status !== 'fully_refunded'
+      "
       :method-options="paymentMethodOptions"
       @recorded="onPaymentRecorded"
     />

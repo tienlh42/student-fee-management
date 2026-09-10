@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref, watch } from "vue";
+import { reactive, ref, watch } from "vue";
 
 import Button from "primevue/button";
 import Column from "primevue/column";
@@ -8,37 +8,48 @@ import InputNumber from "primevue/inputnumber";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import Select from "primevue/select";
+import SelectButton from "primevue/selectbutton";
 import Tag from "primevue/tag";
 
 import AppDialog from "@/components/AppDialog.vue";
 import { errorMessage } from "@/api/client";
 import { invoicesApi } from "@/api/billing";
-import { formatDateTime } from "@/utils/date";
+import { formatDate, formatDateTime } from "@/utils/date";
 import { formatMoney } from "@/utils/money";
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
   invoice: { type: Object, default: null },
+  // false khi hóa đơn đã thanh toán đủ / đã hoàn đủ / người dùng không có quyền —
+  // chỉ còn xem chi tiết hóa đơn + lịch sử, không ghi nhận thêm được.
   canRecord: { type: Boolean, default: false },
-  // "full" = thanh toán ngay (trả đủ số còn nợ), "installment" = chia thành nhiều đợt.
-  mode: { type: String, default: "installment" },
   methodOptions: { type: Array, required: true }, // [{value, label}]
 });
 const emit = defineEmits(["update:visible", "recorded"]);
 
-const isFullMode = computed(() => props.mode === "full");
-const formTitle = computed(() =>
-  isFullMode.value ? "Thanh toán ngay (đủ số còn nợ)" : "Ghi nhận một đợt thanh toán",
-);
-const submitLabel = computed(() => (isFullMode.value ? "Thanh toán ngay" : "Ghi nhận đợt này"));
+const MODE_OPTIONS = [
+  { label: "Thanh toán ngay (đủ số còn nợ)", value: "full" },
+  { label: "Chia thành nhiều đợt", value: "installment" },
+];
 
 const payments = ref([]);
 const loading = ref(false);
 const listError = ref("");
 
-const form = reactive({ amount: null, method: "cash", note: "" });
+// Bản chụp hóa đơn dùng để tính "còn nợ" trong dialog — cập nhật lại từ
+// response sau mỗi lần ghi nhận, để ghi nhiều đợt liên tiếp trong cùng lần mở
+// dialog vẫn thấy đúng số còn lại (props.invoice chỉ làm mới khi bảng hóa đơn
+// ở ngoài load lại).
+const currentInvoice = ref(null);
+
+const form = reactive({ mode: "full", amount: null, method: "cash", note: "" });
 const saving = ref(false);
 const formError = ref("");
+
+function defaultAmountFor(mode) {
+  if (mode !== "full") return null;
+  return Number(currentInvoice.value?.outstanding_amount) || null;
+}
 
 async function load() {
   loading.value = true;
@@ -57,10 +68,19 @@ watch(
   (open) => {
     if (!open || !props.invoice) return;
     formError.value = "";
-    form.amount = isFullMode.value ? Number(props.invoice.outstanding_amount) || null : null;
+    currentInvoice.value = props.invoice;
+    form.mode = "full";
+    form.amount = defaultAmountFor("full");
     form.method = "cash";
     form.note = "";
     load();
+  },
+);
+
+watch(
+  () => form.mode,
+  (mode) => {
+    form.amount = defaultAmountFor(mode);
   },
 );
 
@@ -68,16 +88,15 @@ async function submit() {
   formError.value = "";
   saving.value = true;
   try {
-    await invoicesApi.recordPayment(props.invoice.id, {
+    currentInvoice.value = await invoicesApi.recordPayment(props.invoice.id, {
       amount: form.amount,
       method: form.method,
       note: form.note,
     });
-    form.amount = null;
+    form.amount = defaultAmountFor(form.mode);
     form.note = "";
     await load();
     emit("recorded");
-    if (isFullMode.value) emit("update:visible", false);
   } catch (err) {
     formError.value = errorMessage(err, "Không ghi nhận được thanh toán.");
   } finally {
@@ -89,43 +108,80 @@ async function submit() {
 <template>
   <AppDialog
     :visible="visible"
-    :header="invoice ? `Lịch sử thanh toán — ${invoice.qr_reference_code}` : 'Lịch sử thanh toán'"
+    :header="invoice ? `Thanh toán — ${invoice.qr_reference_code}` : 'Thanh toán'"
     :loading="loading"
-    :style="{ width: '40rem' }"
+    :style="{ width: '42rem' }"
     @update:visible="emit('update:visible', $event)"
   >
     <div class="flex flex-col gap-4">
-      <Message v-if="listError" severity="error" :closable="false">{{ listError }}</Message>
+      <section class="flex flex-col gap-2">
+        <span class="text-sm font-medium">Chi tiết hóa đơn</span>
 
-      <DataTable :value="payments" size="small" striped-rows data-key="id">
-        <template #empty>
-          <div class="py-4 text-center text-surface-500 text-sm">Chưa có thanh toán nào.</div>
-        </template>
-        <Column field="created_at" header="Thời gian" style="width: 10rem">
-          <template #body="{ data }">{{ formatDateTime(data.created_at) }}</template>
-        </Column>
-        <Column header="Số tiền" style="width: 8rem">
-          <template #body="{ data }">{{ formatMoney(data.amount_applied) }}</template>
-        </Column>
-        <Column field="payment_method_display" header="Hình thức" style="width: 8rem" />
-        <Column header="Cách khớp" style="width: 8rem">
-          <template #body="{ data }">
-            <Tag
-              :value="data.matched_by_display"
-              :severity="data.matched_by === 'auto' ? 'info' : 'secondary'"
-            />
+        <DataTable :value="invoice?.items ?? []" size="small" striped-rows data-key="id">
+          <template #empty>
+            <div class="py-2 text-center text-surface-500 text-sm">Không có dòng nào.</div>
           </template>
-        </Column>
-        <Column field="recorded_by_username" header="Người thu" />
-        <Column field="note" header="Ghi chú" />
-      </DataTable>
+          <Column field="fee_item_name_snapshot" header="Khoản thu" />
+          <Column header="Số tiền" style="width: 8rem">
+            <template #body="{ data }">{{ formatMoney(data.amount) }}</template>
+          </Column>
+        </DataTable>
 
-      <section
+        <div class="flex flex-wrap gap-x-6 gap-y-1 text-sm text-surface-600 dark:text-surface-300">
+          <span v-if="Number(invoice?.adjustment_amount)">
+            Điều chỉnh: <strong>{{ formatMoney(invoice.adjustment_amount) }}</strong>
+            <template v-if="invoice.adjustment_note"> ({{ invoice.adjustment_note }})</template>
+          </span>
+          <span>Phải thu: <strong>{{ formatMoney(invoice?.net_amount) }}</strong></span>
+          <span>Còn nợ: <strong>{{ formatMoney(currentInvoice?.outstanding_amount) }}</strong></span>
+          <span>Hạn nộp: <strong>{{ formatDate(invoice?.due_date) }}</strong></span>
+        </div>
+      </section>
+
+      <section class="flex flex-col gap-2 pt-3 border-t border-surface-200 dark:border-surface-700">
+        <span class="text-sm font-medium">Lịch sử thanh toán</span>
+        <Message v-if="listError" severity="error" :closable="false">{{ listError }}</Message>
+
+        <DataTable :value="payments" size="small" striped-rows data-key="id">
+          <template #empty>
+            <div class="py-4 text-center text-surface-500 text-sm">Chưa có thanh toán nào.</div>
+          </template>
+          <Column field="created_at" header="Thời gian" style="width: 10rem">
+            <template #body="{ data }">{{ formatDateTime(data.created_at) }}</template>
+          </Column>
+          <Column header="Số tiền" style="width: 8rem">
+            <template #body="{ data }">{{ formatMoney(data.amount_applied) }}</template>
+          </Column>
+          <Column field="payment_method_display" header="Hình thức" style="width: 8rem" />
+          <Column header="Cách khớp" style="width: 8rem">
+            <template #body="{ data }">
+              <Tag
+                :value="data.matched_by_display"
+                :severity="data.matched_by === 'auto' ? 'info' : 'secondary'"
+              />
+            </template>
+          </Column>
+          <Column field="recorded_by_username" header="Người thu" />
+          <Column field="note" header="Ghi chú" />
+        </DataTable>
+      </section>
+
+      <form
         v-if="canRecord"
+        id="pay-form"
         class="flex flex-col gap-3 pt-3 border-t border-surface-200 dark:border-surface-700"
+        @submit.prevent="submit"
       >
-        <span class="text-sm font-medium">{{ formTitle }}</span>
+        <span class="text-sm font-medium">Ghi nhận thanh toán</span>
         <Message v-if="formError" severity="error" :closable="false">{{ formError }}</Message>
+
+        <SelectButton
+          v-model="form.mode"
+          :options="MODE_OPTIONS"
+          option-label="label"
+          option-value="value"
+          :allow-empty="false"
+        />
 
         <div class="flex flex-wrap items-end gap-3">
           <div class="flex flex-col gap-1">
@@ -137,7 +193,7 @@ async function submit() {
               :min="0"
               :max-fraction-digits="0"
               suffix=" đ"
-              :disabled="isFullMode"
+              :disabled="form.mode === 'full'"
               class="w-44"
             />
           </div>
@@ -157,14 +213,19 @@ async function submit() {
             <InputText id="pay-note" v-model="form.note" />
           </div>
           <Button
-            :label="submitLabel"
+            type="submit"
+            :label="form.mode === 'full' ? 'Thanh toán ngay' : 'Ghi nhận đợt này'"
             icon="pi pi-check"
             :loading="saving"
             :disabled="!form.amount"
-            @click="submit"
           />
         </div>
-      </section>
+      </form>
+
+      <Message v-else-if="invoice?.status === 'fully_refunded'" severity="info" :closable="false">
+        Hóa đơn này đã được hoàn đủ tiền — không thể ghi nhận thanh toán thêm. Nếu học sinh cần
+        đóng lại khoản phí này, hãy tạo một hóa đơn mới.
+      </Message>
     </div>
   </AppDialog>
 </template>

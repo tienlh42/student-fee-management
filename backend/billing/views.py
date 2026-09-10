@@ -229,6 +229,11 @@ class InvoiceViewSet(
     @action(detail=True, methods=["post"], url_path="void")
     def void(self, request, pk=None):
         invoice = self.get_object()
+        if invoice.status == Invoice.Status.FULLY_REFUNDED:
+            return Response(
+                {"detail": "Hóa đơn đã hoàn đủ tiền, không cần hủy nữa."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         invoice.status = Invoice.Status.VOID
         invoice.cancel_reason = request.data.get("reason", "")
         invoice.save(update_fields=["status", "cancel_reason", "updated_at"])

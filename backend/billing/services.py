@@ -158,8 +158,8 @@ def recalculate_status(invoice: Invoice) -> Invoice:
     nhận Payment/Refund.
 
     Dùng `net_paid` (không phải `paid_amount` thô) để hoàn tiền toàn bộ sau
-    khi đã thu đủ đưa hóa đơn về đúng lại ISSUED/DRAFT thay vì kẹt ở
-    PARTIALLY_PAID (paid_amount vẫn dương dù đã hoàn hết).
+    khi đã thu đủ đưa hóa đơn về đúng trạng thái theo lịch sử thu/hoàn thay vì
+    kẹt ở PARTIALLY_PAID (paid_amount vẫn dương dù đã hoàn hết).
     """
     if invoice.status == Invoice.Status.VOID:
         return invoice
@@ -169,6 +169,11 @@ def recalculate_status(invoice: Invoice) -> Invoice:
         invoice.status = Invoice.Status.PAID
     elif net_paid > ZERO:
         invoice.status = Invoice.Status.PARTIALLY_PAID
+    elif invoice.refunded_amount > ZERO:
+        # Đã từng thu rồi hoàn hết (net_paid về 0) — khác với hóa đơn chưa
+        # từng thu đồng nào, cần giữ dấu vết để đối soát chứ không lùi về
+        # ISSUED như chưa có chuyện gì xảy ra.
+        invoice.status = Invoice.Status.FULLY_REFUNDED
     elif invoice.status == Invoice.Status.DRAFT:
         return invoice
     else:

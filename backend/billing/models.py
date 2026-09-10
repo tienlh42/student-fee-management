@@ -164,6 +164,7 @@ class Invoice(TimeStampedModel):
         ISSUED = "issued", "Đã phát hành"
         PARTIALLY_PAID = "partially_paid", "Thanh toán một phần"
         PAID = "paid", "Đã thanh toán"
+        FULLY_REFUNDED = "fully_refunded", "Đã hoàn đủ"
         VOID = "void", "Đã hủy"
 
     house = models.ForeignKey("tenancy.House", on_delete=models.PROTECT, related_name="invoices")

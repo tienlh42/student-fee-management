@@ -392,10 +392,11 @@ class RefundServiceTests(BillingApiFixtureMixin, TestCase):
         self.assertEqual(invoice.status, Invoice.Status.PARTIALLY_PAID)
         self.assertEqual(invoice.net_paid, Decimal("700000"))
 
-    def test_full_refund_without_cancel_resets_status_instead_of_staying_partial(self):
+    def test_full_refund_without_cancel_marks_fully_refunded_instead_of_staying_partial(self):
         """Bug đã sửa: recalculate_status trước đây dùng paid_amount thô nên
         hoàn hết tiền vẫn kẹt ở PARTIALLY_PAID. Giờ dùng net_paid, hoàn hết mà
-        không hủy nghĩa vụ phải quay lại ISSUED (còn nợ y như chưa thu)."""
+        không hủy nghĩa vụ phải chuyển sang FULLY_REFUNDED — khác hóa đơn chưa
+        từng thu đồng nào (ISSUED), để giữ dấu vết đối soát."""
         invoice = generate_invoice(self.student_a, date(2026, 9, 1))
         record_manual_payment(
             invoice, Decimal("3000000"), method=Payment.Method.CASH, user=self.teacher_user
@@ -409,7 +410,7 @@ class RefundServiceTests(BillingApiFixtureMixin, TestCase):
         )
         invoice.refresh_from_db()
         self.assertEqual(invoice.net_paid, Decimal("0"))
-        self.assertEqual(invoice.status, Invoice.Status.ISSUED)
+        self.assertEqual(invoice.status, Invoice.Status.FULLY_REFUNDED)
 
     def test_credit_method_increases_student_balance(self):
         invoice = generate_invoice(self.student_a, date(2026, 9, 1))
