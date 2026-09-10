@@ -7,6 +7,8 @@ chung chung, để mọi thay đổi đều kèm theo tính lại status của I
 
 from rest_framework import serializers
 
+from billing.models import Refund
+
 from .models import IncomingTransaction, Payment
 
 
@@ -39,6 +41,39 @@ class PaymentSerializer(serializers.ModelSerializer):
             "recorded_by_user",
             "recorded_by_username",
             "note",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class RefundSerializer(serializers.ModelSerializer):
+    invoice_reference = serializers.CharField(source="invoice.qr_reference_code", read_only=True)
+    student_name = serializers.CharField(
+        source="invoice.student.person.full_name", read_only=True
+    )
+    method_display = serializers.CharField(source="get_method_display", read_only=True)
+    refunded_by_username = serializers.CharField(
+        source="refunded_by_user.username", read_only=True, default=""
+    )
+    invoice_status = serializers.CharField(source="invoice.status", read_only=True)
+
+    class Meta:
+        model = Refund
+        fields = [
+            "id",
+            "invoice",
+            "invoice_reference",
+            "invoice_status",
+            "student_name",
+            "payment",
+            "amount",
+            "method",
+            "method_display",
+            "reason",
+            "refunded_at",
+            "refunded_by_user",
+            "refunded_by_username",
+            "needs_adjustment_invoice",
             "created_at",
         ]
         read_only_fields = fields

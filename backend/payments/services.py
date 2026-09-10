@@ -10,9 +10,13 @@ import re
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import F
+from django.utils import timezone
 
-from billing.models import Invoice
+from billing.models import Invoice, Refund
 from billing.services import recalculate_status
+from notifications.models import Notification
+from people.models import Student
 
 from .models import IncomingTransaction, Payment
 
@@ -131,6 +135,89 @@ def record_manual_payment(
     )
     recalculate_status(invoice)
     return payment
+
+
+@transaction.atomic
+def process_refund(
+    invoice: Invoice,
+    amount: Decimal,
+    *,
+    cancel_obligation: bool,
+    method: str,
+    user,
+    reason: str = "",
+    payment: Payment | None = None,
+) -> Refund:
+    """Hoàn tiền cho một hóa đơn — chỉ ghi thêm một `Refund`, không sửa/xóa
+    Payment cũ. Quy trình tối giản (chưa có bước duyệt), hai lựa chọn độc
+    lập ở đầu vào (amount, cancel_obligation) bao quát cả 4 tổ hợp
+    đóng đủ/một phần × hoàn hết/hoàn một phần:
+
+    - `cancel_obligation=True`: học sinh không còn nợ khoản này nữa (nghỉ
+      học, hủy dịch vụ...) — đưa hóa đơn về VOID kèm lý do, KHÔNG đổi
+      `total_amount`. `void`/`restore` tay vẫn là một action riêng, độc lập.
+    - `cancel_obligation=False`: khoản phí vẫn còn hiệu lực, chỉ điều chỉnh
+      lại số đã nộp (đóng nhầm, thu dư...) — status tự suy lại theo
+      `net_paid` qua `recalculate_status`, không có state riêng cho "đã hoàn
+      tiền".
+    - `method=Refund.Method.CREDIT`: không chuyển tiền ra ngoài — cộng vào
+      `credit_balance` của học sinh để trừ dần vào hóa đơn kỳ sau.
+
+    Khóa hàng `Invoice` (`select_for_update`) trước khi đọc `net_paid` — hai
+    yêu cầu hoàn tiền cùng lúc cho cùng hóa đơn (double-click, hai người cùng
+    thao tác) phải xếp hàng chứ không được cùng đọc `net_paid` cũ rồi cùng
+    vượt qua kiểm tra, khiến tổng hoàn vượt quá số đã thực nhận.
+    """
+    invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+
+    if amount <= ZERO:
+        raise ValueError("Số tiền hoàn phải lớn hơn 0.")
+    if amount > invoice.net_paid:
+        raise ValueError("Số tiền hoàn không được vượt quá số đã thực nhận.")
+    if user is None:
+        raise ValueError("Hoàn tiền bắt buộc ghi người thực hiện.")
+    if method not in Refund.Method.values:
+        raise ValueError("Phương thức hoàn không hợp lệ.")
+
+    refund = Refund.objects.create(
+        invoice=invoice,
+        payment=payment,
+        amount=amount,
+        method=method,
+        reason=reason,
+        refunded_at=timezone.now(),
+        refunded_by_user=user,
+        # Hệ thống chưa theo dõi hóa đơn điện tử — luôn False cho tới khi có
+        # tính năng đó (xem help_text trên field). Không chặn luồng ở đây.
+        needs_adjustment_invoice=False,
+    )
+
+    if method == Refund.Method.CREDIT:
+        Student.objects.filter(pk=invoice.student_id).update(
+            credit_balance=F("credit_balance") + amount
+        )
+
+    if cancel_obligation:
+        invoice.status = Invoice.Status.VOID
+        invoice.cancel_reason = reason
+        invoice.save(update_fields=["status", "cancel_reason", "updated_at"])
+    else:
+        recalculate_status(invoice)
+
+    Notification.objects.create(
+        house=invoice.house,
+        student=invoice.student,
+        title=f"Xác nhận hoàn tiền hóa đơn {invoice.qr_reference_code}",
+        body=(
+            f"Đã hoàn {amount} cho hóa đơn kỳ {invoice.period:%m/%Y} "
+            f"({Refund.Method(method).label})."
+            + (f" Lý do: {reason}" if reason else "")
+        ),
+        created_by_user=user,
+        published_at=timezone.now(),
+    )
+
+    return refund
 
 
 def _refresh_transaction_status(incoming: IncomingTransaction) -> None:

@@ -22,3 +22,8 @@ export const paymentsApi = {
   list: (params = {}) => api.get(`/payments/payments/${query(params)}`),
   meta: () => api.get("/payments/payments/meta/"),
 };
+
+export const refundsApi = {
+  list: (params = {}) => api.get(`/payments/refunds/${query(params)}`),
+  meta: () => api.get("/payments/refunds/meta/"),
+};

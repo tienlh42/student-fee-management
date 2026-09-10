@@ -304,6 +304,16 @@ class InvoiceApiTests(BillingApiFixtureMixin, TestCase):
         response = self.client.post(f"/api/billing/invoices/{invoice.pk}/restore/")
         self.assertEqual(response.status_code, 400)
 
+    def test_cannot_void_fully_refunded_invoice(self):
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        invoice.status = Invoice.Status.FULLY_REFUNDED
+        invoice.save(update_fields=["status"])
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.post(f"/api/billing/invoices/{invoice.pk}/void/")
+        self.assertEqual(response.status_code, 400)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.Status.FULLY_REFUNDED)
+
     def test_guardian_cannot_delete_invoice(self):
         invoice = generate_invoice(self.student_a, date(2026, 9, 1))
         self.client.force_authenticate(self.guardian_user)

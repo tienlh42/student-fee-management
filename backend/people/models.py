@@ -67,6 +67,13 @@ class Student(TimeStampedModel, SoftDeleteModel):
         "Trạng thái", max_length=20, choices=Status.choices, default=Status.ACTIVE
     )
     enrolled_date = models.DateField("Ngày nhập học", null=True, blank=True)
+    credit_balance = models.DecimalField(
+        "Số dư credit",
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        help_text="Tiền hoàn giữ lại (không chuyển khoản/tiền mặt) — trừ dần vào hóa đơn kỳ sau.",
+    )
 
     class Meta:
         verbose_name = "Học sinh"

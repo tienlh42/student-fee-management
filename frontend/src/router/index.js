@@ -54,6 +54,13 @@ const routes = [
     component: () => import("../views/TransactionsView.vue"),
   },
   {
+    path: "/refunds",
+    name: "refunds",
+    // Guardian không bao giờ được thấy dữ liệu ngân hàng (xem README § Phân quyền).
+    meta: { title: "Hoàn tiền", requiresBankData: true },
+    component: () => import("../views/RefundsView.vue"),
+  },
+  {
     path: "/notifications",
     name: "notifications",
     meta: { title: "Thông báo" },

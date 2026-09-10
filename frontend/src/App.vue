@@ -53,6 +53,12 @@ const nav = computed(() =>
       to: "/transactions",
       visible: auth.role.can_see_bank_data,
     },
+    {
+      label: "Hoàn tiền",
+      icon: "pi pi-replay",
+      to: "/refunds",
+      visible: auth.role.can_see_bank_data,
+    },
     { label: "Thông báo", icon: "pi pi-bell", to: "/notifications" },
     { label: "Quản trị", icon: "pi pi-shield", to: "/admin", visible: auth.role.is_superuser },
   ].filter((item) => item.visible !== false),
