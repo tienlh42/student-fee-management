@@ -9,7 +9,7 @@ from rest_framework import serializers
 
 from billing.models import Refund
 
-from .models import IncomingTransaction, Payment
+from .models import BankAccount, IncomingTransaction, Payment
 
 
 class PaymentSerializer(serializers.ModelSerializer):
@@ -77,6 +77,58 @@ class RefundSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
+
+class BankAccountSerializer(serializers.ModelSerializer):
+    """CRUD cấu hình tài khoản nhận tiền theo house — chỉ superuser (xem
+    `CanManageBankAccounts`). `account_number` write-only: bỏ trống khi sửa
+    house/ngân hàng/tên chủ tài khoản mà không muốn đổi số tài khoản; API
+    không bao giờ trả số đầy đủ ở đây — xem qua action `reveal` riêng.
+    """
+
+    house_name = serializers.CharField(source="house.name", read_only=True)
+    bank_name = serializers.CharField(source="get_bank_code_display", read_only=True)
+    account_number_last4 = serializers.CharField(read_only=True)
+    account_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    class Meta:
+        model = BankAccount
+        fields = [
+            "id",
+            "house",
+            "house_name",
+            "bank_code",
+            "bank_name",
+            "account_holder_name",
+            "account_number_last4",
+            "account_number",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_account_number(self, value):
+        if value and not value.isdigit():
+            raise serializers.ValidationError("Số tài khoản chỉ gồm chữ số.")
+        return value
+
+    def create(self, validated_data):
+        account_number = validated_data.pop("account_number", "")
+        if not account_number:
+            raise serializers.ValidationError({"account_number": ["Bắt buộc."]})
+        instance = BankAccount(**validated_data)
+        instance.set_account_number(account_number)
+        instance.save()
+        return instance
+
+    def update(self, instance, validated_data):
+        account_number = validated_data.pop("account_number", "")
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if account_number:
+            instance.set_account_number(account_number)
+        instance.save()
+        return instance
 
 
 class IncomingTransactionSerializer(serializers.ModelSerializer):

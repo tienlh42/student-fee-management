@@ -19,6 +19,8 @@ import Toolbar from "primevue/toolbar";
 
 import { errorMessage } from "@/api/client";
 import { housesApi, usersApi } from "@/api/accounts";
+import { bankAccountsApi } from "@/api/payments";
+import BankAccountFormDialog from "@/components/BankAccountFormDialog.vue";
 import HouseFormDialog from "@/components/HouseFormDialog.vue";
 import UserFormDialog from "@/components/UserFormDialog.vue";
 import { useAuthStore } from "@/stores/auth";
@@ -181,8 +183,87 @@ function confirmDeleteUser(row) {
   });
 }
 
+/* ---------- Tài khoản ngân hàng ---------- */
+const bankAccountRows = ref([]);
+const bankAccountLoading = ref(false);
+const bankAccountSearch = ref("");
+const bankAccountFormVisible = ref(false);
+const selectedBankAccount = ref(null);
+
+// OneToOne với House — chỉ house chưa cấu hình mới cho "thêm mới".
+const unconfiguredHouseOptions = computed(() =>
+  houseOptions.value.filter((h) => !bankAccountRows.value.some((b) => b.house === h.value)),
+);
+
+const filteredBankAccountRows = computed(() => {
+  const term = bankAccountSearch.value.trim().toLowerCase();
+  return bankAccountRows.value.filter((row) => {
+    if (houseScope.houseId && row.house !== houseScope.houseId) return false;
+    if (
+      term &&
+      !(
+        row.house_name.toLowerCase().includes(term) ||
+        row.account_holder_name.toLowerCase().includes(term)
+      )
+    )
+      return false;
+    return true;
+  });
+});
+
+async function loadBankAccounts() {
+  bankAccountLoading.value = true;
+  try {
+    const page = await bankAccountsApi.list({ page_size: 200 });
+    bankAccountRows.value = page.results ?? page;
+  } catch (err) {
+    toast.add({ severity: "error", summary: errorMessage(err), life: 4000 });
+  } finally {
+    bankAccountLoading.value = false;
+  }
+}
+
+function openCreateBankAccount() {
+  selectedBankAccount.value = null;
+  bankAccountFormVisible.value = true;
+}
+
+function openEditBankAccount(row) {
+  selectedBankAccount.value = row;
+  bankAccountFormVisible.value = true;
+}
+
+async function onBankAccountSaved(_row, wasEdit) {
+  toast.add({
+    severity: "success",
+    summary: wasEdit ? "Đã cập nhật tài khoản ngân hàng" : "Đã thêm tài khoản ngân hàng",
+    life: 2500,
+  });
+  await loadBankAccounts();
+}
+
+function confirmDeleteBankAccount(row) {
+  confirm.require({
+    header: "Xóa tài khoản ngân hàng",
+    message: `Xóa tài khoản ngân hàng của "${row.house_name}"? Thao tác này không hoàn tác được.`,
+    icon: "pi pi-exclamation-triangle",
+    acceptLabel: "Xóa",
+    rejectLabel: "Hủy",
+    acceptProps: { severity: "danger" },
+    accept: async () => {
+      try {
+        await bankAccountsApi.remove(row.id);
+        toast.add({ severity: "success", summary: "Đã xóa tài khoản ngân hàng", life: 2500 });
+        await loadBankAccounts();
+      } catch (err) {
+        toast.add({ severity: "error", summary: errorMessage(err), life: 5000 });
+      }
+    },
+  });
+}
+
 onMounted(async () => {
-  await Promise.all([loadHouses(), loadUsers()]);
+  await Promise.all([loadHouses(), loadUsers(), loadBankAccounts()]);
 });
 </script>
 
@@ -192,6 +273,7 @@ onMounted(async () => {
       <TabList>
         <Tab value="houses">Cơ sở</Tab>
         <Tab value="users">Tài khoản</Tab>
+        <Tab value="bankAccounts">Tài khoản ngân hàng</Tab>
       </TabList>
 
       <TabPanels>
@@ -332,6 +414,72 @@ onMounted(async () => {
             </DataTable>
           </div>
         </TabPanel>
+
+        <!-- ============= TÀI KHOẢN NGÂN HÀNG ============= -->
+        <TabPanel value="bankAccounts">
+          <div class="flex flex-col gap-4">
+            <Toolbar>
+              <template #start>
+                <IconField>
+                  <InputIcon class="pi pi-search" />
+                  <InputText v-model="bankAccountSearch" placeholder="Tìm cơ sở, chủ tài khoản…" />
+                </IconField>
+              </template>
+              <template #end>
+                <Button
+                  label="Thêm tài khoản ngân hàng"
+                  icon="pi pi-plus"
+                  :disabled="unconfiguredHouseOptions.length === 0"
+                  @click="openCreateBankAccount"
+                />
+              </template>
+            </Toolbar>
+
+            <DataTable
+              :value="filteredBankAccountRows"
+              :loading="bankAccountLoading"
+              data-key="id"
+              size="small"
+              striped-rows
+            >
+              <template #empty>
+                <div class="py-6 text-center text-surface-500 text-sm">
+                  Chưa cơ sở nào có tài khoản ngân hàng.
+                </div>
+              </template>
+
+              <Column field="house_name" header="Cơ sở" sortable />
+              <Column field="bank_name" header="Ngân hàng" />
+              <Column field="account_holder_name" header="Chủ tài khoản" />
+              <Column header="Số tài khoản" style="width: 10rem">
+                <template #body="{ data }">****{{ data.account_number_last4 }}</template>
+              </Column>
+              <Column header="" style="width: 7rem">
+                <template #body="{ data }">
+                  <div class="flex justify-end gap-1">
+                    <Button
+                      v-tooltip.top="'Sửa'"
+                      icon="pi pi-pencil"
+                      text
+                      rounded
+                      aria-label="Sửa"
+                      @click="openEditBankAccount(data)"
+                    />
+                    <Button
+                      v-tooltip.top="'Xóa'"
+                      icon="pi pi-trash"
+                      severity="danger"
+                      text
+                      rounded
+                      aria-label="Xóa"
+                      @click="confirmDeleteBankAccount(data)"
+                    />
+                  </div>
+                </template>
+              </Column>
+            </DataTable>
+          </div>
+        </TabPanel>
       </TabPanels>
     </Tabs>
 
@@ -343,6 +491,13 @@ onMounted(async () => {
       :house-options="houseOptions"
       :is-self="selectedUser !== null && selectedUser.id === auth.user?.id"
       @saved="onUserSaved"
+    />
+
+    <BankAccountFormDialog
+      v-model:visible="bankAccountFormVisible"
+      :bank-account="selectedBankAccount"
+      :house-options="selectedBankAccount ? houseOptions : unconfiguredHouseOptions"
+      @saved="onBankAccountSaved"
     />
   </div>
 </template>

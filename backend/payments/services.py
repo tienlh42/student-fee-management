@@ -7,7 +7,9 @@ thứ ở đây phải nhanh và idempotent.
 from __future__ import annotations
 
 import re
+import unicodedata
 from decimal import Decimal
+from urllib.parse import quote
 
 from django.db import transaction
 from django.db.models import F
@@ -18,7 +20,7 @@ from billing.services import recalculate_status
 from notifications.models import Notification
 from people.models import Student
 
-from .models import IncomingTransaction, Payment
+from .models import BankAccount, IncomingTransaction, Payment
 
 ZERO = Decimal("0")
 REFERENCE_RE = re.compile(r"HP[ACDEFGHJKLMNPQRTUVWXY3456789]{8}", re.IGNORECASE)
@@ -231,11 +233,31 @@ def _refresh_transaction_status(incoming: IncomingTransaction) -> None:
     incoming.save(update_fields=["status", "updated_at"])
 
 
-def build_vietqr_url(invoice: Invoice) -> str | None:
-    """URL ảnh VietQR cho hóa đơn.
+def _strip_accents(text: str) -> str:
+    """VietQR yêu cầu tên chủ tài khoản không dấu."""
+    normalized = unicodedata.normalize("NFD", text)
+    return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
 
-    Cần số tài khoản đầy đủ, mà BankAccount cố tình chỉ lưu 4 số cuối —
-    nên hàm này chưa dùng được cho tới khi quyết định nơi lưu số đầy đủ
-    (biến môi trường, hoặc field mã hóa riêng). Xem README.
+
+def build_vietqr_url(invoice: Invoice) -> str | None:
+    """URL ảnh VietQR (quick-link của VietQR.io) cho hóa đơn.
+
+    None nếu house chưa cấu hình BankAccount, hoặc hóa đơn không còn số tiền
+    phải thu (đã thanh toán đủ) — không có lý do gì để hiện QR nữa.
     """
-    return None
+    try:
+        bank_account = invoice.house.bank_account
+    except BankAccount.DoesNotExist:
+        return None
+
+    amount = invoice.outstanding_amount
+    if amount <= ZERO:
+        return None
+
+    account_number = bank_account.get_account_number()
+    account_name = quote(_strip_accents(bank_account.account_holder_name).upper())
+    content = quote(invoice.qr_reference_code)
+    return (
+        f"https://img.vietqr.io/image/{bank_account.bank_code}-{account_number}-compact2.png"
+        f"?amount={int(amount)}&addInfo={content}&accountName={account_name}"
+    )

@@ -8,16 +8,23 @@ from django.db import models
 
 from core.models import CreatedAtModel, TimeStampedModel
 
+from .bank_list import NAPAS_BANKS
+from .crypto import decrypt_account_number, encrypt_account_number
+
 
 class BankAccount(TimeStampedModel):
+    """Tài khoản nhận tiền của một house — nguồn dữ liệu để sinh VietQR.
+
+    Số tài khoản lưu mã hoá (`account_number_encrypted`), không bao giờ ở dạng
+    thô trong DB. `bank_code` là mã BIN theo chuẩn Napas (xem `bank_list.py`),
+    bắt buộc để VietQR định danh đúng ngân hàng.
+    """
+
     house = models.OneToOneField(
         "tenancy.House", on_delete=models.CASCADE, related_name="bank_account"
     )
-    bank_code = models.CharField("Mã ngân hàng", max_length=20)
-    account_number_last4 = models.CharField(
-        "4 số cuối tài khoản", max_length=4,
-        help_text="Chỉ lưu 4 số cuối — không lưu số tài khoản đầy đủ.",
-    )
+    bank_code = models.CharField("Ngân hàng", max_length=20, choices=NAPAS_BANKS)
+    account_number_encrypted = models.TextField("Số tài khoản (mã hóa)")
     account_holder_name = models.CharField("Chủ tài khoản", max_length=255)
 
     class Meta:
@@ -26,6 +33,38 @@ class BankAccount(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.bank_code} ****{self.account_number_last4}"
+
+    def set_account_number(self, raw: str) -> None:
+        digits = raw.strip()
+        if not digits.isdigit():
+            raise ValueError("Số tài khoản chỉ gồm chữ số.")
+        self.account_number_encrypted = encrypt_account_number(digits)
+
+    def get_account_number(self) -> str:
+        return decrypt_account_number(self.account_number_encrypted)
+
+    @property
+    def account_number_last4(self) -> str:
+        return self.get_account_number()[-4:]
+
+
+class BankAccountRevealLog(CreatedAtModel):
+    """Ghi lại mỗi lần admin xem số tài khoản đầy đủ — append-only, không xoá."""
+
+    bank_account = models.ForeignKey(
+        BankAccount, on_delete=models.CASCADE, related_name="reveal_logs"
+    )
+    revealed_by_user = models.ForeignKey(
+        "accounts.User", on_delete=models.PROTECT, related_name="bank_account_reveals"
+    )
+
+    class Meta:
+        verbose_name = "Lượt xem số tài khoản"
+        verbose_name_plural = "Lượt xem số tài khoản"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.revealed_by_user} xem {self.bank_account} lúc {self.created_at:%d/%m/%Y %H:%M}"
 
 
 class BankIntegration(TimeStampedModel):

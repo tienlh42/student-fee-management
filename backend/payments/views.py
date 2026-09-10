@@ -18,13 +18,42 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from accounts.permissions import CanSeeBankData
+from accounts.permissions import CanManageBankAccounts, CanSeeBankData
 from billing.models import Invoice, Refund
 from people.services import teacher_house_ids
 
-from .models import IncomingTransaction, Payment
-from .serializers import IncomingTransactionSerializer, PaymentSerializer, RefundSerializer
+from .bank_list import NAPAS_BANKS
+from .models import BankAccount, BankAccountRevealLog, IncomingTransaction, Payment
+from .serializers import (
+    BankAccountSerializer,
+    IncomingTransactionSerializer,
+    PaymentSerializer,
+    RefundSerializer,
+)
 from .services import allocate_manually, try_auto_match
+
+
+class BankAccountViewSet(viewsets.ModelViewSet):
+    """Cấu hình tài khoản nhận tiền theo house — nguồn để sinh VietQR.
+
+    Khác các viewset khác trong app này (chỉ đọc, ghi qua services.py):
+    đây là cấu hình thuần túy, không phải sổ sách giao dịch, nên CRUD trực
+    tiếp qua ModelViewSet là hợp lý. Chỉ superuser xem/sửa (`CanManageBankAccounts`).
+    """
+
+    queryset = BankAccount.objects.select_related("house")
+    serializer_class = BankAccountSerializer
+    permission_classes = [IsAuthenticated, CanManageBankAccounts]
+
+    @action(detail=False, methods=["get"], url_path="meta")
+    def options_meta(self, request):
+        return Response({"banks": [{"value": value, "label": label} for value, label in NAPAS_BANKS]})
+
+    @action(detail=True, methods=["post"], url_path="reveal")
+    def reveal(self, request, pk=None):
+        bank_account = self.get_object()
+        BankAccountRevealLog.objects.create(bank_account=bank_account, revealed_by_user=request.user)
+        return Response({"account_number": bank_account.get_account_number()})
 
 
 class IncomingTransactionViewSet(

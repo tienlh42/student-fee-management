@@ -38,6 +38,14 @@ class Role:
         """
         return self.is_superuser
 
+    @property
+    def can_manage_bank_accounts(self) -> bool:
+        """Cấu hình tài khoản nhận tiền (để sinh VietQR) — chỉ superuser, kể cả
+        đọc: khác `can_manage_houses` (đọc mở cho mọi người đăng nhập), số tài
+        khoản dù đã mã hoá vẫn không có lý do gì lộ ra cho teacher/guardian.
+        """
+        return self.is_superuser
+
 
 def role_for(user) -> Role:
     base = {

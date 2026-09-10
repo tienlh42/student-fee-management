@@ -10,6 +10,15 @@ function query(params) {
   return qs ? `?${qs}` : "";
 }
 
+export const bankAccountsApi = {
+  list: (params = {}) => api.get(`/payments/bank-accounts/${query(params)}`),
+  meta: () => api.get("/payments/bank-accounts/meta/"),
+  create: (payload) => api.post("/payments/bank-accounts/", payload),
+  update: (id, payload) => api.patch(`/payments/bank-accounts/${id}/`, payload),
+  remove: (id) => api.delete(`/payments/bank-accounts/${id}/`),
+  reveal: (id) => api.post(`/payments/bank-accounts/${id}/reveal/`),
+};
+
 export const incomingTransactionsApi = {
   list: (params = {}) => api.get(`/payments/incoming-transactions/${query(params)}`),
   meta: () => api.get("/payments/incoming-transactions/meta/"),

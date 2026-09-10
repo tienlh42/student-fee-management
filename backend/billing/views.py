@@ -13,9 +13,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.permissions import CanSeeBankData, IsTeacher, IsTeacherOrReadOnly
-from payments.models import Payment
+from payments.models import BankAccount, Payment
 from payments.serializers import PaymentSerializer
-from payments.services import process_refund, record_manual_payment
+from payments.services import build_vietqr_url, process_refund, record_manual_payment
 from people.models import Student
 from people.permissions import WritableWithinOwnHouse
 from people.services import accessible_students, default_house_id, teacher_house_ids
@@ -289,6 +289,29 @@ class InvoiceViewSet(
 
         invoice.refresh_from_db()
         return Response(InvoiceSerializer(invoice).data)
+
+    @action(detail=True, methods=["get"], url_path="vietqr")
+    def vietqr(self, request, pk=None):
+        """Thông tin để hiển thị QR thanh toán — không override permission như
+        `payments`/`refund` bên dưới: đây là nội dung phụ huynh cần thấy để
+        quét chuyển khoản, không phải sổ sách nội bộ.
+        """
+        invoice = self.get_object()
+        try:
+            bank_account = invoice.house.bank_account
+        except BankAccount.DoesNotExist:
+            bank_account = None
+
+        return Response(
+            {
+                "url": build_vietqr_url(invoice),
+                "amount": invoice.outstanding_amount,
+                "reference_code": invoice.qr_reference_code,
+                "bank_name": bank_account.get_bank_code_display() if bank_account else "",
+                "account_holder_name": bank_account.account_holder_name if bank_account else "",
+                "account_number_last4": bank_account.account_number_last4 if bank_account else "",
+            }
+        )
 
     @action(
         detail=True,

@@ -61,3 +61,17 @@ class CanManageUsers(BasePermission):
 
     def has_permission(self, request, view):
         return role_for(request.user).can_manage_users
+
+
+class CanManageBankAccounts(BasePermission):
+    """Đọc lẫn ghi đều chỉ dành cho superuser — giống `CanManageUsers`.
+
+    Cấu hình tài khoản nhận tiền (nguồn sinh VietQR) là dữ liệu ngân hàng nhạy
+    cảm nhất trong hệ thống, nằm hẳn trong trang Quản trị — không mở đọc kể cả
+    cho teacher như `CanSeeBankData` (vốn dùng cho sổ quỹ/giao dịch).
+    """
+
+    message = "Chỉ quản trị viên cấp cao mới được cấu hình tài khoản ngân hàng."
+
+    def has_permission(self, request, view):
+        return role_for(request.user).can_manage_bank_accounts

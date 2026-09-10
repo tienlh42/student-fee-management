@@ -18,6 +18,7 @@ import { invoicesApi } from "@/api/billing";
 import { studentsApi } from "@/api/people";
 import { paymentsApi, refundsApi } from "@/api/payments";
 import InvoicePaymentsDialog from "@/components/InvoicePaymentsDialog.vue";
+import InvoiceQrDialog from "@/components/InvoiceQrDialog.vue";
 import RefundDialog from "@/components/RefundDialog.vue";
 import StatusTag from "@/components/StatusTag.vue";
 import { useAuthStore } from "@/stores/auth";
@@ -52,6 +53,7 @@ const guardians = computed(() => student.value?.guardians ?? []);
 
 const paymentsVisible = ref(false);
 const refundVisible = ref(false);
+const qrVisible = ref(false);
 const paymentMethodOptions = ref([]);
 const refundMethodOptions = ref([]);
 
@@ -270,6 +272,13 @@ onMounted(async () => {
 
         <div class="ml-auto flex flex-wrap gap-2">
           <Button
+            v-if="invoice.status !== 'void' && Number(invoice.outstanding_amount) > 0"
+            label="Sinh QR thanh toán"
+            icon="pi pi-qrcode"
+            severity="success"
+            @click="qrVisible = true"
+          />
+          <Button
             v-if="auth.role.can_see_bank_data"
             label="Thanh toán / lịch sử"
             icon="pi pi-wallet"
@@ -457,5 +466,7 @@ onMounted(async () => {
       :method-options="refundMethodOptions"
       @refunded="onRefunded"
     />
+
+    <InvoiceQrDialog v-model:visible="qrVisible" :invoice="invoice" />
   </div>
 </template>

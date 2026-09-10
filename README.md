@@ -321,9 +321,13 @@ chỉ chặn ghi) — đây là cấu hình nội bộ, không phải dữ liệ
       theo kỳ + hủy) và form quản lý khoản thu/gói phí/đăng ký gói phí/giảm trừ cho teacher
 - [ ] `serializers.py` + `urls.py` cho `payments`, `notifications` (hiện `urlpatterns = []`)
 - [ ] Endpoint webhook SePay + xác thực `webhook_secret`
-- [ ] Sinh ảnh VietQR — `payments/services.py:build_vietqr_url` đang trả `None`:
-      VietQR cần **số tài khoản đầy đủ**, mà `BankAccount` cố tình chỉ lưu 4 số cuối.
-      Cần chốt nơi lưu số đầy đủ (biến môi trường, hay field mã hóa riêng) trước khi làm.
+- [x] Sinh ảnh VietQR — `BankAccount` lưu số tài khoản mã hóa (Fernet, key
+      `BANK_ACCOUNT_ENCRYPTION_KEY`), `bank_code` ràng buộc theo mã BIN Napas
+      (`payments/bank_list.py`). `build_vietqr_url` dùng quick-link ảnh của
+      VietQR.io. Trang Quản trị → tab "Tài khoản ngân hàng" (superuser only,
+      `CanManageBankAccounts`) để CRUD, có nút "Hiện" xem lại số đầy đủ (ghi
+      log qua `BankAccountRevealLog`). Chưa làm: hiển thị QR cho phụ huynh
+      trên trang hóa đơn.
 - [ ] Mã hóa thật cho `api_key_encrypted` / `access_token_encrypted` — hiện chỉ là
       `TextField`, tên field mô tả ý định chứ chưa có cơ chế mã hóa
 - [ ] Thay 2 màn hình placeholder còn lại (Đối soát, Thông báo)

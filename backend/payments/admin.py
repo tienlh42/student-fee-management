@@ -1,11 +1,32 @@
 from django.contrib import admin
 
-from .models import BankAccount, BankIntegration, IncomingTransaction, Payment
+from .models import (
+    BankAccount,
+    BankAccountRevealLog,
+    BankIntegration,
+    IncomingTransaction,
+    Payment,
+)
 
 
 @admin.register(BankAccount)
 class BankAccountAdmin(admin.ModelAdmin):
     list_display = ("house", "bank_code", "account_number_last4", "account_holder_name")
+    # Số tài khoản đầy đủ chỉ nhập/xem qua trang Quản trị (API `set_account_number`/
+    # `reveal`) — ở đây chỉ hiển thị ciphertext thô, không sửa được.
+    readonly_fields = ("account_number_encrypted",)
+
+
+@admin.register(BankAccountRevealLog)
+class BankAccountRevealLogAdmin(admin.ModelAdmin):
+    list_display = ("bank_account", "revealed_by_user", "created_at")
+    readonly_fields = ("bank_account", "revealed_by_user", "created_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(BankIntegration)

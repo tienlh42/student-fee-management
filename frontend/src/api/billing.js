@@ -49,6 +49,7 @@ export const invoicesApi = {
   restore: (id) => api.post(`/billing/invoices/${id}/restore/`),
   remove: (id) => api.delete(`/billing/invoices/${id}/`),
   payments: (id) => api.get(`/billing/invoices/${id}/payments/`),
+  vietqr: (id) => api.get(`/billing/invoices/${id}/vietqr/`),
   recordPayment: (id, payload) => api.post(`/billing/invoices/${id}/record-payment/`, payload),
   refund: (id, payload) => api.post(`/billing/invoices/${id}/refund/`, payload),
 };
