@@ -427,6 +427,31 @@ class RefundServiceTests(BillingApiFixtureMixin, TestCase):
         self.student_a.refresh_from_db()
         self.assertEqual(self.student_a.credit_balance, Decimal("400000"))
 
+    def test_overpayment_credited_to_student_balance_zeroes_outstanding(self):
+        """Kế toán nhập dư (còn nợ âm) — hoàn đúng phần dư vào credit_balance
+        đưa còn nợ về 0. Đây là luồng nút "Hoàn về số dư của học sinh" dùng."""
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        record_manual_payment(
+            invoice, Decimal("3200000"), method=Payment.Method.CASH, user=self.teacher_user
+        )
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.outstanding_amount, Decimal("-200000"))
+
+        process_refund(
+            invoice,
+            Decimal("200000"),
+            cancel_obligation=False,
+            method=Refund.Method.CREDIT,
+            user=self.teacher_user,
+            reason="Hoàn phần thu dư vào số dư học sinh",
+        )
+
+        invoice.refresh_from_db()
+        self.student_a.refresh_from_db()
+        self.assertEqual(invoice.outstanding_amount, Decimal("0"))
+        self.assertEqual(invoice.status, Invoice.Status.PAID)
+        self.assertEqual(self.student_a.credit_balance, Decimal("200000"))
+
     def test_creates_confirmation_notification_for_student(self):
         invoice = generate_invoice(self.student_a, date(2026, 9, 1))
         record_manual_payment(

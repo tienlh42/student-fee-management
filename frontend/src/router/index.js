@@ -40,6 +40,13 @@ const routes = [
     component: () => import("../views/InvoicesView.vue"),
   },
   {
+    path: "/invoices/:code",
+    name: "invoice-detail",
+    // Slug là mã HĐ (qr_reference_code), không phải id số.
+    meta: { title: "Chi tiết hóa đơn" },
+    component: () => import("../views/InvoiceDetailView.vue"),
+  },
+  {
     path: "/payments",
     name: "payments",
     // Guardian không bao giờ được thấy dữ liệu ngân hàng (xem README § Phân quyền).

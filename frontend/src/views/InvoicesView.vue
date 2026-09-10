@@ -223,6 +223,31 @@ async function onRefunded() {
   await loadInvoices();
 }
 
+function confirmCreditExcess(invoice) {
+  const excess = Math.abs(Number(invoice.outstanding_amount));
+  confirm.require({
+    header: "Hoàn phần thu dư vào số dư học sinh",
+    message: `Hóa đơn ${invoice.qr_reference_code} đang thu dư ${formatMoney(excess)}. Hoàn số này vào số dư (credit) của ${invoice.student_name} để dùng cho kỳ sau?`,
+    icon: "pi pi-exclamation-triangle",
+    acceptLabel: "Hoàn vào số dư",
+    rejectLabel: "Đóng",
+    accept: async () => {
+      try {
+        await invoicesApi.refund(invoice.id, {
+          amount: excess,
+          method: "credit",
+          cancel_obligation: false,
+          reason: "Hoàn phần thu dư vào số dư học sinh",
+        });
+        toast.add({ severity: "success", summary: "Đã hoàn vào số dư học sinh", life: 2500 });
+        await loadInvoices();
+      } catch (err) {
+        toast.add({ severity: "error", summary: errorMessage(err), life: 4000 });
+      }
+    },
+  });
+}
+
 async function onGenerated(result) {
   toast.add({
     severity: "success",
@@ -688,7 +713,16 @@ onMounted(async () => {
                 </div>
               </template>
 
-              <Column field="qr_reference_code" header="Mã HĐ" style="width: 8rem" />
+              <Column field="qr_reference_code" header="Mã HĐ" style="width: 8rem">
+                <template #body="{ data }">
+                  <RouterLink
+                    :to="`/invoices/${data.qr_reference_code}`"
+                    class="text-brand-teal hover:underline"
+                  >
+                    {{ data.qr_reference_code }}
+                  </RouterLink>
+                </template>
+              </Column>
 
               <Column field="student_name" header="Học sinh" sortable />
 
@@ -708,11 +742,32 @@ onMounted(async () => {
                 <template #body="{ data }">{{ formatMoney(data.net_paid) }}</template>
               </Column>
 
-              <Column header="Còn nợ" style="width: 9rem">
+              <Column header="Còn nợ" style="width: 12rem">
                 <template #body="{ data }">
-                  <span :class="Number(data.outstanding_amount) > 0 ? 'text-red-500 font-medium' : ''">
-                    {{ formatMoney(data.outstanding_amount) }}
-                  </span>
+                  <div class="flex items-center gap-1">
+                    <span
+                      :class="
+                        Number(data.outstanding_amount) > 0
+                          ? 'text-red-500 font-medium'
+                          : Number(data.outstanding_amount) < 0
+                            ? 'text-orange-500 font-medium'
+                            : ''
+                      "
+                    >
+                      {{ formatMoney(data.outstanding_amount) }}
+                    </span>
+                    <Button
+                      v-if="auth.role.can_see_bank_data && Number(data.outstanding_amount) < 0"
+                      v-tooltip.top="'Hoàn về số dư của học sinh'"
+                      icon="pi pi-wallet"
+                      severity="warn"
+                      text
+                      rounded
+                      size="small"
+                      aria-label="Hoàn về số dư của học sinh"
+                      @click="confirmCreditExcess(data)"
+                    />
+                  </div>
                 </template>
               </Column>
 

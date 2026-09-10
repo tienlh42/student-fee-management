@@ -12,6 +12,7 @@ function query(params) {
 
 export const studentsApi = {
   list: (params = {}) => api.get(`/people/students/${query(params)}`),
+  retrieve: (id) => api.get(`/people/students/${id}/`),
   meta: () => api.get("/people/students/meta/"),
   create: (payload) => api.post("/people/students/", payload),
   update: (id, payload) => api.patch(`/people/students/${id}/`, payload),

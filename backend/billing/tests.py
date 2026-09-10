@@ -266,6 +266,20 @@ class InvoiceApiTests(BillingApiFixtureMixin, TestCase):
         self.assertEqual(response.data["count"], 1)
         self.assertEqual(response.data["results"][0]["student"], self.student_a.pk)
 
+    def test_lookup_by_code_returns_exact_match(self):
+        """Trang chi tiết hóa đơn dùng qr_reference_code làm slug thay vì id."""
+        invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.client.force_authenticate(self.teacher_user)
+        response = self.client.get(f"/api/billing/invoices/?code={invoice.qr_reference_code}")
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], invoice.pk)
+
+    def test_lookup_by_code_is_scoped_to_accessible_students(self):
+        invoice_b = generate_invoice(self.student_b, date(2026, 9, 1))
+        self.client.force_authenticate(self.guardian_user)
+        response = self.client.get(f"/api/billing/invoices/?code={invoice_b.qr_reference_code}")
+        self.assertEqual(response.data["count"], 0)
+
     def test_guardian_cannot_void_invoice(self):
         invoice = generate_invoice(self.student_a, date(2026, 9, 1))
         self.client.force_authenticate(self.guardian_user)

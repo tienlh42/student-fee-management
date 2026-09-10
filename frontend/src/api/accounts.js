@@ -19,6 +19,7 @@ export const accountsApi = {
 
 export const housesApi = {
   list: (params = {}) => api.get(`/tenancy/houses/${query(params)}`),
+  retrieve: (id) => api.get(`/tenancy/houses/${id}/`),
   create: (payload) => api.post("/tenancy/houses/", payload),
   update: (id, payload) => api.patch(`/tenancy/houses/${id}/`, payload),
   remove: (id) => api.delete(`/tenancy/houses/${id}/`),

@@ -146,6 +146,10 @@ class InvoiceViewSet(
             queryset = queryset.filter(student_id=student)
         if house := params.get("house"):
             queryset = queryset.filter(house_id=house)
+        if code := params.get("code"):
+            # Tra cứu chính xác theo mã HĐ (unique) — dùng cho trang chi tiết
+            # hóa đơn, slug là qr_reference_code chứ không phải id số.
+            queryset = queryset.filter(qr_reference_code=code)
         return queryset
 
     def destroy(self, request, *args, **kwargs):

@@ -1,5 +1,7 @@
 <script setup>
 import { reactive, ref, watch } from "vue";
+import { useConfirm } from "primevue/useconfirm";
+import { useToast } from "primevue/usetoast";
 
 import Button from "primevue/button";
 import Column from "primevue/column";
@@ -16,6 +18,9 @@ import { errorMessage } from "@/api/client";
 import { invoicesApi } from "@/api/billing";
 import { formatDate, formatDateTime } from "@/utils/date";
 import { formatMoney } from "@/utils/money";
+
+const confirm = useConfirm();
+const toast = useToast();
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -103,6 +108,32 @@ async function submit() {
     saving.value = false;
   }
 }
+
+function confirmCreditExcess() {
+  const excess = Math.abs(Number(currentInvoice.value.outstanding_amount));
+  confirm.require({
+    header: "Hoàn phần thu dư vào số dư học sinh",
+    message: `Hóa đơn ${currentInvoice.value.qr_reference_code} đang thu dư ${formatMoney(excess)}. Hoàn số này vào số dư (credit) của học sinh để dùng cho kỳ sau?`,
+    icon: "pi pi-exclamation-triangle",
+    acceptLabel: "Hoàn vào số dư",
+    rejectLabel: "Đóng",
+    accept: async () => {
+      try {
+        currentInvoice.value = await invoicesApi.refund(currentInvoice.value.id, {
+          amount: excess,
+          method: "credit",
+          cancel_obligation: false,
+          reason: "Hoàn phần thu dư vào số dư học sinh",
+        });
+        form.amount = defaultAmountFor(form.mode);
+        toast.add({ severity: "success", summary: "Đã hoàn vào số dư học sinh", life: 2500 });
+        emit("recorded");
+      } catch (err) {
+        toast.add({ severity: "error", summary: errorMessage(err), life: 4000 });
+      }
+    },
+  });
+}
 </script>
 
 <template>
@@ -133,7 +164,21 @@ async function submit() {
             <template v-if="invoice.adjustment_note"> ({{ invoice.adjustment_note }})</template>
           </span>
           <span>Phải thu: <strong>{{ formatMoney(invoice?.net_amount) }}</strong></span>
-          <span>Còn nợ: <strong>{{ formatMoney(currentInvoice?.outstanding_amount) }}</strong></span>
+          <span class="inline-flex items-center gap-1">
+            Còn nợ:
+            <strong :class="Number(currentInvoice?.outstanding_amount) < 0 ? 'text-orange-500' : ''">
+              {{ formatMoney(currentInvoice?.outstanding_amount) }}
+            </strong>
+            <Button
+              v-if="Number(currentInvoice?.outstanding_amount) < 0"
+              label="Hoàn về số dư của học sinh"
+              icon="pi pi-wallet"
+              severity="warn"
+              text
+              size="small"
+              @click="confirmCreditExcess"
+            />
+          </span>
           <span>Hạn nộp: <strong>{{ formatDate(invoice?.due_date) }}</strong></span>
         </div>
       </section>
