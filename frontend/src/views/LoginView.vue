@@ -8,6 +8,7 @@ import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import Password from "primevue/password";
 
+import BrandLogo from "@/components/BrandLogo.vue";
 import { errorMessage } from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
 
@@ -37,8 +38,11 @@ async function submit() {
     <Card class="w-full max-w-sm">
       <template #title>
         <div class="text-center">
-          <div class="text-xl font-semibold">Quản lý học phí</div>
-          <div class="text-sm font-normal text-surface-500 mt-1">Đăng nhập để tiếp tục</div>
+          <BrandLogo variant="red" class="w-16 h-16 mx-auto mb-2" />
+          <div class="text-xl font-display font-bold">EduFi</div>
+          <div class="text-sm font-normal text-surface-500 mt-1">
+            Quản lý học phí — Đăng nhập để tiếp tục
+          </div>
         </div>
       </template>
 

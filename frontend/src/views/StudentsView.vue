@@ -5,17 +5,17 @@ import { useToast } from "primevue/usetoast";
 
 import Button from "primevue/button";
 import Column from "primevue/column";
-import DataTable from "primevue/datatable";
 import IconField from "primevue/iconfield";
 import InputIcon from "primevue/inputicon";
 import InputText from "primevue/inputtext";
 import Select from "primevue/select";
-import Tag from "primevue/tag";
 import Toolbar from "primevue/toolbar";
 
 import { errorMessage } from "@/api/client";
 import { studentsApi } from "@/api/people";
+import AppDataTable from "@/components/AppDataTable.vue";
 import StatusLegendDialog from "@/components/StatusLegendDialog.vue";
+import StatusTag from "@/components/StatusTag.vue";
 import StudentFormDialog from "@/components/StudentFormDialog.vue";
 import StudentGuardiansDialog from "@/components/StudentGuardiansDialog.vue";
 import { useAuthStore } from "@/stores/auth";
@@ -69,7 +69,7 @@ const loading = ref(false);
 const meta = ref({ statuses: [], genders: [], relationships: [], class_grades: [], houses: [] });
 
 const filters = reactive({ search: "", status: null, class_grade: null });
-const paging = reactive({ page: 1, rows: 25 });
+const paging = reactive({ page: 1, rows: 10 });
 
 const formVisible = ref(false);
 const guardiansVisible = ref(false);
@@ -226,23 +226,23 @@ onMounted(async () => {
       </template>
     </Toolbar>
 
-    <DataTable
+    <AppDataTable
       :value="rows"
       :loading="loading"
+      storage-key="students"
       data-key="id"
       lazy
       paginator
       :rows="paging.rows"
       :total-records="total"
-      :rows-per-page-options="[25, 50, 100]"
+      :rows-per-page-options="[10, 25, 50, 100]"
       :first="(paging.page - 1) * paging.rows"
-      size="small"
-      striped-rows
       @page="onPage"
     >
       <template #empty>
-        <div class="py-6 text-center text-surface-500 text-sm">
-          Không có học sinh nào khớp bộ lọc.
+        <div class="flex flex-col items-center gap-2 py-10 text-surface-400 dark:text-surface-500">
+          <i class="pi pi-users text-3xl" />
+          <span class="text-sm">Không có học sinh nào khớp bộ lọc.</span>
         </div>
       </template>
 
@@ -304,7 +304,7 @@ onMounted(async () => {
           </span>
         </template>
         <template #body="{ data }">
-          <Tag :value="data.status_display" :severity="STATUS_SEVERITY[data.status]" />
+          <StatusTag :value="data.status_display" :severity="STATUS_SEVERITY[data.status]" />
         </template>
       </Column>
 
@@ -341,7 +341,7 @@ onMounted(async () => {
           </div>
         </template>
       </Column>
-    </DataTable>
+    </AppDataTable>
 
     <StudentFormDialog
       v-model:visible="formVisible"

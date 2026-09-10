@@ -1,9 +1,31 @@
 @import "tailwindcss";
 @import "primeicons/primeicons.css";
+/* Nguồn brand duy nhất (logo, favicon, màu) — đổi brand thì sửa file này,
+   xem c:\Users\lehai\Downloads\edufi-brand-assets để lấy bộ mới. */
+@import "./theme/colors.css";
 
 /* PrimeVue được đăng ký ở layer `primevue` (xem main.js) nên utility class của
    Tailwind luôn thắng khi ghi đè style component. */
 @layer theme, base, primevue, components, utilities;
+
+/* Expose brand tokens làm utility class Tailwind (bg-brand-red, text-brand-gold, ...)
+   và font brand (font-display/font-numeric). Font "body" áp dụng thẳng vào `body` bên dưới. */
+@theme {
+  --color-brand-red: var(--edufi-red);
+  --color-brand-red-hover: var(--edufi-red-hover);
+  --color-brand-gold: var(--edufi-gold);
+  --color-brand-gold-hover: var(--edufi-gold-hover);
+  --color-brand-teal: var(--edufi-teal);
+  --color-brand-teal-hover: var(--edufi-teal-hover);
+
+  --color-status-paid: var(--edufi-status-paid);
+  --color-status-pending: var(--edufi-status-pending);
+  --color-status-overdue: var(--edufi-status-overdue);
+
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Be Vietnam Pro", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-numeric: "IBM Plex Mono", ui-monospace, monospace;
+}
 
 :root {
   color-scheme: light dark;
@@ -11,5 +33,37 @@
 
 body {
   margin: 0;
-  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-body);
+}
+
+/* Chuyển trang/route mượt: fade nhẹ + trượt dọc rất ngắn, tránh giật khi điều hướng. */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.page-enter-from,
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* Tôn trọng lựa chọn "giảm chuyển động" của người dùng — tắt hết animation/transition. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

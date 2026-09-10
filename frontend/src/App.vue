@@ -9,6 +9,7 @@ import Menu from "primevue/menu";
 import Tag from "primevue/tag";
 import Toast from "primevue/toast";
 
+import BrandLogo from "@/components/BrandLogo.vue";
 import { useAuthStore } from "@/stores/auth";
 
 const route = useRoute();
@@ -89,49 +90,78 @@ async function signOut() {
 </script>
 
 <template>
-  <RouterView v-if="bare" />
+  <Transition name="page" mode="out-in">
+    <RouterView v-if="bare" :key="route.fullPath" />
+  </Transition>
 
-  <div v-else class="min-h-screen flex bg-surface-50 dark:bg-surface-950">
+  <div v-if="!bare" class="min-h-screen flex bg-surface-50 dark:bg-surface-950">
     <aside
-      v-show="sidebarOpen"
-      class="w-60 shrink-0 border-r border-surface-200 dark:border-surface-800 bg-white dark:bg-surface-900"
+      class="shrink-0 overflow-hidden border-r border-surface-200/70 dark:border-surface-800 bg-white dark:bg-surface-900 transition-[width] duration-300 ease-in-out"
+      :class="sidebarOpen ? 'w-60' : 'w-0'"
     >
-      <div class="px-4 py-4 font-semibold text-lg">Quản lý học phí</div>
-      <nav class="px-2 space-y-1">
-        <RouterLink
-          v-for="item in nav"
-          :key="item.to"
-          :to="item.to"
-          class="flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-surface-100 dark:hover:bg-surface-800"
-          :class="route.path === item.to ? 'bg-surface-100 dark:bg-surface-800 font-medium' : ''"
-        >
-          <i :class="item.icon" />
-          <span>{{ item.label }}</span>
-        </RouterLink>
-      </nav>
+      <div class="w-60 h-full flex flex-col">
+        <div class="px-4 py-4 flex items-center gap-2">
+          <BrandLogo
+            variant="red"
+            class="w-9 h-9 shrink-0 transition-transform duration-300 ease-out hover:scale-110"
+          />
+          <div class="leading-tight">
+            <div class="font-display font-bold text-lg">EduFi</div>
+            <div class="text-xs text-surface-500 dark:text-surface-400">Quản lý học phí</div>
+          </div>
+        </div>
+        <nav class="px-2 space-y-1">
+          <RouterLink
+            v-for="item in nav"
+            :key="item.to"
+            :to="item.to"
+            class="group relative flex items-center gap-2 pl-3 pr-3 py-2 rounded-md text-sm border-l-4 transition-colors duration-200 ease-out"
+            :class="
+              route.path === item.to
+                ? 'border-brand-teal bg-brand-teal/10 text-brand-teal font-medium'
+                : 'border-transparent text-surface-600 dark:text-surface-300 hover:border-brand-teal/40 hover:bg-surface-100 dark:hover:bg-surface-800'
+            "
+          >
+            <i
+              :class="[
+                item.icon,
+                'transition-colors duration-200 ease-out group-hover:text-brand-teal',
+                route.path === item.to ? 'text-brand-teal' : 'text-surface-400 dark:text-surface-500',
+              ]"
+            />
+            <span>{{ item.label }}</span>
+          </RouterLink>
+        </nav>
+      </div>
     </aside>
 
     <div class="flex-1 min-w-0 flex flex-col">
       <header
-        class="h-14 flex items-center gap-3 px-4 border-b border-surface-200 dark:border-surface-800 bg-white dark:bg-surface-900"
+        class="h-14 flex items-center gap-3 px-4 border-b border-surface-200/70 dark:border-surface-800 bg-white dark:bg-surface-900"
       >
         <button
-          class="p-2 rounded hover:bg-surface-100 dark:hover:bg-surface-800"
+          class="p-2 rounded-full hover:bg-brand-teal/10 hover:text-brand-teal transition-colors duration-200 ease-out"
           type="button"
-          aria-label="Ẩn/hiện menu"
+          :aria-label="sidebarOpen ? 'Ẩn menu' : 'Hiện menu'"
           @click="sidebarOpen = !sidebarOpen"
         >
-          <i class="pi pi-bars" />
+          <i
+            class="pi pi-angle-double-left transition-transform duration-300 ease-in-out"
+            :class="{ 'rotate-180': !sidebarOpen }"
+          />
         </button>
-        <h1 class="text-sm text-surface-600 dark:text-surface-300">
-          {{ route.meta.title ?? "" }}
-        </h1>
+        <Transition name="fade" mode="out-in">
+          <h1 :key="route.path" class="text-sm text-surface-600 dark:text-surface-300">
+            {{ route.meta.title ?? "" }}
+          </h1>
+        </Transition>
 
         <div class="ml-auto flex items-center gap-2">
           <Tag :value="roleLabel" severity="secondary" />
           <Button
             text
             rounded
+            class="transition-colors duration-200 ease-out"
             aria-haspopup="true"
             aria-controls="user-menu"
             :aria-label="`Tài khoản ${auth.displayName}`"
@@ -145,7 +175,9 @@ async function signOut() {
       </header>
 
       <main class="flex-1 p-4 overflow-auto">
-        <RouterView />
+        <Transition name="page" mode="out-in">
+          <RouterView :key="route.fullPath" />
+        </Transition>
       </main>
     </div>
   </div>

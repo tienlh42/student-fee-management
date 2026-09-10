@@ -77,8 +77,11 @@ function Wait-Backend {
 }
 
 if ($NoNewWindows) {
+    Write-Host "Khoi dong database (nen) ..." -ForegroundColor Cyan
+    docker compose -f docker-compose.dev.yml up -d db --wait
+
     Write-Host "Khoi dong backend (nen) ..." -ForegroundColor Cyan
-    docker compose -f docker-compose.dev.yml up -d
+    docker compose -f docker-compose.dev.yml up -d web
 
     if ($Seed) {
         Wait-Backend | Out-Null
@@ -92,10 +95,19 @@ if ($NoNewWindows) {
     exit 0
 }
 
-Write-Host "Mo cua so backend (Postgres + Django) ..." -ForegroundColor Cyan
+Write-Host "Khoi dong database (Postgres) ..." -ForegroundColor Cyan
+docker compose -f docker-compose.dev.yml up -d db --wait
+
+Write-Host "Mo cua so database (Postgres) ..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList @(
     "-NoExit", "-Command",
-    "Set-Location '$RepoRoot'; docker compose -f docker-compose.dev.yml up"
+    "Set-Location '$RepoRoot'; docker compose -f docker-compose.dev.yml up db"
+)
+
+Write-Host "Mo cua so backend (Django) ..." -ForegroundColor Cyan
+Start-Process powershell -ArgumentList @(
+    "-NoExit", "-Command",
+    "Set-Location '$RepoRoot'; docker compose -f docker-compose.dev.yml up web"
 )
 
 if ($Seed) {

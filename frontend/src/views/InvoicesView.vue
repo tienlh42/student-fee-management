@@ -29,12 +29,14 @@ import {
   studentFeePackagesApi,
 } from "@/api/billing";
 import { paymentsApi, refundsApi } from "@/api/payments";
+import AppDataTable from "@/components/AppDataTable.vue";
 import FeeItemFormDialog from "@/components/FeeItemFormDialog.vue";
 import FeePackageFormDialog from "@/components/FeePackageFormDialog.vue";
 import InvoiceGenerateDialog from "@/components/InvoiceGenerateDialog.vue";
 import InvoicePaymentsDialog from "@/components/InvoicePaymentsDialog.vue";
 import RefundDialog from "@/components/RefundDialog.vue";
 import StatusLegendDialog from "@/components/StatusLegendDialog.vue";
+import StatusTag from "@/components/StatusTag.vue";
 import StudentBillingSummaryDialog from "@/components/StudentBillingSummaryDialog.vue";
 import StudentDiscountFormDialog from "@/components/StudentDiscountFormDialog.vue";
 import StudentFeePackageFormDialog from "@/components/StudentFeePackageFormDialog.vue";
@@ -100,7 +102,7 @@ const invoiceRows = ref([]);
 const invoiceTotal = ref(0);
 const invoiceLoading = ref(false);
 const invoiceFilters = reactive({ search: "", status: null, period: null });
-const invoicePaging = reactive({ page: 1, rows: 25 });
+const invoicePaging = reactive({ page: 1, rows: 10 });
 const generateVisible = ref(false);
 const studentSummaryVisible = ref(false);
 const selectedStudentForSummary = ref(null);
@@ -660,23 +662,23 @@ onMounted(async () => {
               </template>
             </Toolbar>
 
-            <DataTable
+            <AppDataTable
               :value="invoiceRows"
               :loading="invoiceLoading"
+              storage-key="invoices"
               data-key="id"
               lazy
               paginator
               :rows="invoicePaging.rows"
               :total-records="invoiceTotal"
-              :rows-per-page-options="[25, 50, 100]"
+              :rows-per-page-options="[10, 25, 50, 100]"
               :first="(invoicePaging.page - 1) * invoicePaging.rows"
-              size="small"
-              striped-rows
               @page="onInvoicePage"
             >
               <template #empty>
-                <div class="py-6 text-center text-surface-500 text-sm">
-                  Không có hóa đơn nào khớp bộ lọc.
+                <div class="flex flex-col items-center gap-2 py-10 text-surface-400 dark:text-surface-500">
+                  <i class="pi pi-file text-3xl" />
+                  <span class="text-sm">Không có hóa đơn nào khớp bộ lọc.</span>
                 </div>
               </template>
 
@@ -724,7 +726,7 @@ onMounted(async () => {
                   </span>
                 </template>
                 <template #body="{ data }">
-                  <Tag :value="data.status_display" :severity="STATUS_SEVERITY[data.status]" />
+                  <StatusTag :value="data.status_display" :severity="STATUS_SEVERITY[data.status]" />
                 </template>
               </Column>
 
@@ -800,7 +802,7 @@ onMounted(async () => {
                   </div>
                 </template>
               </Column>
-            </DataTable>
+            </AppDataTable>
           </div>
         </TabPanel>
 
