@@ -190,11 +190,6 @@ const bankAccountSearch = ref("");
 const bankAccountFormVisible = ref(false);
 const selectedBankAccount = ref(null);
 
-// OneToOne với House — chỉ house chưa cấu hình mới cho "thêm mới".
-const unconfiguredHouseOptions = computed(() =>
-  houseOptions.value.filter((h) => !bankAccountRows.value.some((b) => b.house === h.value)),
-);
-
 const filteredBankAccountRows = computed(() => {
   const term = bankAccountSearch.value.trim().toLowerCase();
   return bankAccountRows.value.filter((row) => {
@@ -240,6 +235,16 @@ async function onBankAccountSaved(_row, wasEdit) {
     life: 2500,
   });
   await loadBankAccounts();
+}
+
+async function setPrimaryBankAccount(row) {
+  try {
+    await bankAccountsApi.update(row.id, { is_primary: true });
+    toast.add({ severity: "success", summary: "Đã đặt làm tài khoản chính", life: 2500 });
+    await loadBankAccounts();
+  } catch (err) {
+    toast.add({ severity: "error", summary: errorMessage(err), life: 5000 });
+  }
 }
 
 function confirmDeleteBankAccount(row) {
@@ -429,7 +434,7 @@ onMounted(async () => {
                 <Button
                   label="Thêm tài khoản ngân hàng"
                   icon="pi pi-plus"
-                  :disabled="unconfiguredHouseOptions.length === 0"
+                  :disabled="houseOptions.length === 0"
                   @click="openCreateBankAccount"
                 />
               </template>
@@ -453,6 +458,18 @@ onMounted(async () => {
               <Column field="account_holder_name" header="Chủ tài khoản" />
               <Column header="Số tài khoản" style="width: 10rem">
                 <template #body="{ data }">****{{ data.account_number_last4 }}</template>
+              </Column>
+              <Column header="Chính" style="width: 8rem">
+                <template #body="{ data }">
+                  <Tag v-if="data.is_primary" value="Chính" severity="info" />
+                  <Button
+                    v-else
+                    label="Đặt làm chính"
+                    text
+                    size="small"
+                    @click="setPrimaryBankAccount(data)"
+                  />
+                </template>
               </Column>
               <Column header="" style="width: 7rem">
                 <template #body="{ data }">
@@ -496,7 +513,7 @@ onMounted(async () => {
     <BankAccountFormDialog
       v-model:visible="bankAccountFormVisible"
       :bank-account="selectedBankAccount"
-      :house-options="selectedBankAccount ? houseOptions : unconfiguredHouseOptions"
+      :house-options="houseOptions"
       @saved="onBankAccountSaved"
     />
   </div>

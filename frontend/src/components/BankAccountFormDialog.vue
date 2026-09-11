@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import Button from "primevue/button";
+import Checkbox from "primevue/checkbox";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import Select from "primevue/select";
@@ -21,7 +22,13 @@ const emit = defineEmits(["update:visible", "saved"]);
 const bankOptions = ref([]);
 
 function blankForm() {
-  return { house: null, bank_code: null, account_holder_name: "", account_number: "" };
+  return {
+    house: null,
+    bank_code: null,
+    account_holder_name: "",
+    account_number: "",
+    is_primary: false,
+  };
 }
 
 const form = reactive(blankForm());
@@ -148,6 +155,12 @@ async function submit() {
           {{ errors.account_holder_name }}
         </small>
       </div>
+
+      <div class="flex items-center gap-2">
+        <Checkbox v-model="form.is_primary" input-id="bank-account-primary" binary />
+        <label for="bank-account-primary" class="text-sm">Tài khoản chính (dùng để tạo mã QR)</label>
+      </div>
+      <small v-if="errors.is_primary" class="text-red-500">{{ errors.is_primary }}</small>
 
       <div v-if="isEdit" class="flex flex-col gap-1">
         <label class="text-sm font-medium">Số tài khoản hiện tại</label>

@@ -5,6 +5,7 @@ Payment/IncomingTransaction chỉ đọc qua API — tạo/sửa đi qua service
 chung chung, để mọi thay đổi đều kèm theo tính lại status của Invoice/giao dịch.
 """
 
+from django.db import transaction
 from rest_framework import serializers
 
 from billing.models import Refund
@@ -81,7 +82,10 @@ class RefundSerializer(serializers.ModelSerializer):
 
 class BankAccountSerializer(serializers.ModelSerializer):
     """CRUD cấu hình tài khoản nhận tiền theo house — chỉ superuser (xem
-    `CanManageBankAccounts`). `account_number` write-only: bỏ trống khi sửa
+    `CanManageBankAccounts`). Một house có thể có nhiều tài khoản; `is_primary`
+    đánh dấu tài khoản dùng để sinh VietQR — chỉ một cái/house, giữ bất biến
+    này ở `create`/`update` (cùng cách `people.services.link_guardian` xử lý
+    `is_primary_contact`). `account_number` write-only: bỏ trống khi sửa
     house/ngân hàng/tên chủ tài khoản mà không muốn đổi số tài khoản; API
     không bao giờ trả số đầy đủ ở đây — xem qua action `reveal` riêng.
     """
@@ -102,6 +106,7 @@ class BankAccountSerializer(serializers.ModelSerializer):
             "account_holder_name",
             "account_number_last4",
             "account_number",
+            "is_primary",
             "created_at",
             "updated_at",
         ]
@@ -112,17 +117,43 @@ class BankAccountSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Số tài khoản chỉ gồm chữ số.")
         return value
 
+    def validate(self, attrs):
+        # Luôn phải còn đúng một primary/house — không cho bỏ tick primary
+        # của tài khoản đang là chính mà không chọn tài khoản khác thay thế.
+        if self.instance is not None and self.instance.is_primary and attrs.get("is_primary") is False:
+            raise serializers.ValidationError(
+                {"is_primary": ["Chọn tài khoản khác làm chính trước khi bỏ tài khoản này."]}
+            )
+        return attrs
+
+    @transaction.atomic
     def create(self, validated_data):
         account_number = validated_data.pop("account_number", "")
         if not account_number:
             raise serializers.ValidationError({"account_number": ["Bắt buộc."]})
+        house = validated_data["house"]
+        # Tài khoản đầu tiên của house luôn là primary, kể cả khi form không tick —
+        # nếu không sẽ có house không có tài khoản nào sinh được VietQR.
+        is_primary = validated_data.get("is_primary", False) or not BankAccount.objects.filter(
+            house=house
+        ).exists()
+        validated_data["is_primary"] = is_primary
+        if is_primary:
+            # Bỏ primary cũ TRƯỚC khi lưu bản ghi mới — constraint DB không
+            # cho hai primary cùng tồn tại dù chỉ trong một câu lệnh.
+            BankAccount.objects.filter(house=house).update(is_primary=False)
         instance = BankAccount(**validated_data)
         instance.set_account_number(account_number)
         instance.save()
         return instance
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         account_number = validated_data.pop("account_number", "")
+        if validated_data.get("is_primary"):
+            BankAccount.objects.filter(house=instance.house).exclude(pk=instance.pk).update(
+                is_primary=False
+            )
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if account_number:

@@ -240,14 +240,17 @@ class Command(BaseCommand):
         return house
 
     def _bank_account(self, house: House) -> BankAccount:
-        account, _ = BankAccount.objects.get_or_create(
+        account, created = BankAccount.objects.get_or_create(
             house=house,
             defaults={
                 "bank_code": "970436",  # Vietcombank
-                "account_number_last4": "8899",
                 "account_holder_name": "NGUYEN THI LAN",
+                "is_primary": True,
             },
         )
+        if created:
+            account.set_account_number("0011223348899")
+            account.save(update_fields=["account_number_encrypted"])
         return account
 
     def _teachers(self, house: House, password: str) -> list[Teacher]:

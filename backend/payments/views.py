@@ -55,6 +55,18 @@ class BankAccountViewSet(viewsets.ModelViewSet):
         BankAccountRevealLog.objects.create(bank_account=bank_account, revealed_by_user=request.user)
         return Response({"account_number": bank_account.get_account_number()})
 
+    def perform_destroy(self, instance):
+        was_primary = instance.is_primary
+        house = instance.house
+        instance.delete()
+        if was_primary:
+            # Xoá tài khoản chính nhưng house vẫn còn tài khoản khác — thăng
+            # cái mới nhất lên chính để VietQR không im lặng ngừng hoạt động.
+            successor = BankAccount.objects.filter(house=house).order_by("-created_at").first()
+            if successor:
+                successor.is_primary = True
+                successor.save(update_fields=["is_primary", "updated_at"])
+
 
 class IncomingTransactionViewSet(
     mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet

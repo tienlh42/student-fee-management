@@ -245,9 +245,8 @@ def build_vietqr_url(invoice: Invoice) -> str | None:
     None nếu house chưa cấu hình BankAccount, hoặc hóa đơn không còn số tiền
     phải thu (đã thanh toán đủ) — không có lý do gì để hiện QR nữa.
     """
-    try:
-        bank_account = invoice.house.bank_account
-    except BankAccount.DoesNotExist:
+    bank_account = invoice.house.bank_accounts.filter(is_primary=True).first()
+    if bank_account is None:
         return None
 
     amount = invoice.outstanding_amount

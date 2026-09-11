@@ -11,7 +11,8 @@ from .models import (
 
 @admin.register(BankAccount)
 class BankAccountAdmin(admin.ModelAdmin):
-    list_display = ("house", "bank_code", "account_number_last4", "account_holder_name")
+    list_display = ("house", "bank_code", "account_number_last4", "account_holder_name", "is_primary")
+    list_filter = ("house", "is_primary")
     # Số tài khoản đầy đủ chỉ nhập/xem qua trang Quản trị (API `set_account_number`/
     # `reveal`) — ở đây chỉ hiển thị ciphertext thô, không sửa được.
     readonly_fields = ("account_number_encrypted",)

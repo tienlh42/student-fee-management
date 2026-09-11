@@ -2,6 +2,7 @@ import threading
 from datetime import date
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
@@ -13,13 +14,15 @@ from notifications.models import Notification
 from people.models import Person, Student
 from tenancy.models import House
 
-from .models import IncomingTransaction, Payment
+from .models import BankAccount, IncomingTransaction, Payment
 from .services import (
     extract_reference_codes,
     process_refund,
     record_manual_payment,
     try_auto_match,
 )
+
+User = get_user_model()
 
 
 class ReferenceExtractionTests(TestCase):
@@ -627,3 +630,66 @@ class RefundConcurrencyTests(BillingApiFixtureMixin, TransactionTestCase):
         invoice.refresh_from_db()
         self.assertEqual(invoice.net_paid, Decimal("300000"))
         self.assertGreaterEqual(invoice.net_paid, Decimal("0"))
+
+
+class BankAccountApiTests(BillingApiFixtureMixin, TestCase):
+    """Một house cho phép nhiều BankAccount, nhưng luôn đúng một `is_primary`."""
+
+    def setUp(self):
+        super().setUp()
+        # Tạo trực tiếp thay vì qua _user (helper đó gắn kèm role_obj Teacher/Guardian).
+        self.superuser = User.objects.create_user(
+            username="root_admin", password="matkhau-rat-dai", is_superuser=True, is_staff=True
+        )
+        self.client.force_authenticate(self.superuser)
+
+    def _create(self, **overrides):
+        payload = {
+            "house": self.house_a.pk,
+            "bank_code": "970422",
+            "account_holder_name": "NGUYEN VAN A",
+            "account_number": "1234567890",
+        }
+        payload.update(overrides)
+        return self.client.post("/api/payments/bank-accounts/", payload, format="json")
+
+    def test_first_account_of_a_house_becomes_primary_automatically(self):
+        response = self._create()
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(response.data["is_primary"])
+
+    def test_second_account_is_not_primary_by_default(self):
+        self._create()
+        response = self._create(account_number="9999999999", is_primary=False)
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertFalse(response.data["is_primary"])
+        self.assertEqual(
+            BankAccount.objects.filter(house=self.house_a, is_primary=True).count(), 1
+        )
+
+    def test_setting_a_new_primary_unsets_the_old_one(self):
+        first = self._create().data
+        second = self._create(account_number="9999999999").data
+
+        response = self.client.patch(
+            f"/api/payments/bank-accounts/{second['id']}/", {"is_primary": True}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(BankAccount.objects.get(pk=second["id"]).is_primary)
+        self.assertFalse(BankAccount.objects.get(pk=first["id"]).is_primary)
+
+    def test_cannot_unset_primary_without_replacement(self):
+        only = self._create().data
+        response = self.client.patch(
+            f"/api/payments/bank-accounts/{only['id']}/", {"is_primary": False}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(BankAccount.objects.get(pk=only["id"]).is_primary)
+
+    def test_deleting_primary_promotes_another_account(self):
+        first = self._create().data
+        second = self._create(account_number="9999999999").data
+
+        response = self.client.delete(f"/api/payments/bank-accounts/{first['id']}/")
+        self.assertEqual(response.status_code, 204)
+        self.assertTrue(BankAccount.objects.get(pk=second["id"]).is_primary)

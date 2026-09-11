@@ -13,7 +13,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.permissions import CanSeeBankData, IsTeacher, IsTeacherOrReadOnly
-from payments.models import BankAccount, Payment
+from payments.models import Payment
 from payments.serializers import PaymentSerializer
 from payments.services import build_vietqr_url, process_refund, record_manual_payment
 from people.models import Student
@@ -297,10 +297,7 @@ class InvoiceViewSet(
         quét chuyển khoản, không phải sổ sách nội bộ.
         """
         invoice = self.get_object()
-        try:
-            bank_account = invoice.house.bank_account
-        except BankAccount.DoesNotExist:
-            bank_account = None
+        bank_account = invoice.house.bank_accounts.filter(is_primary=True).first()
 
         return Response(
             {

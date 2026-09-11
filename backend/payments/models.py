@@ -15,21 +15,37 @@ from .crypto import decrypt_account_number, encrypt_account_number
 class BankAccount(TimeStampedModel):
     """Tài khoản nhận tiền của một house — nguồn dữ liệu để sinh VietQR.
 
+    Một house có thể có nhiều tài khoản, nhưng chỉ một tài khoản `is_primary`
+    tại một thời điểm — đó là tài khoản dùng để sinh VietQR (xem
+    `payments.services.build_vietqr_url`). Việc giữ đúng bất biến "chỉ một
+    primary mỗi house" nằm ở `BankAccountSerializer` (API là đường ghi duy
+    nhất), theo cùng cách `people.services.link_guardian` xử lý
+    `is_primary_contact`.
+
     Số tài khoản lưu mã hoá (`account_number_encrypted`), không bao giờ ở dạng
     thô trong DB. `bank_code` là mã BIN theo chuẩn Napas (xem `bank_list.py`),
     bắt buộc để VietQR định danh đúng ngân hàng.
     """
 
-    house = models.OneToOneField(
-        "tenancy.House", on_delete=models.CASCADE, related_name="bank_account"
+    house = models.ForeignKey(
+        "tenancy.House", on_delete=models.CASCADE, related_name="bank_accounts"
     )
     bank_code = models.CharField("Ngân hàng", max_length=20, choices=NAPAS_BANKS)
     account_number_encrypted = models.TextField("Số tài khoản (mã hóa)")
     account_holder_name = models.CharField("Chủ tài khoản", max_length=255)
+    is_primary = models.BooleanField("Tài khoản chính", default=False)
 
     class Meta:
         verbose_name = "Tài khoản ngân hàng"
         verbose_name_plural = "Tài khoản ngân hàng"
+        ordering = ["house_id", "-is_primary", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["house"],
+                condition=models.Q(is_primary=True),
+                name="unique_primary_bank_account_per_house",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"{self.bank_code} ****{self.account_number_last4}"
