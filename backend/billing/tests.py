@@ -18,7 +18,7 @@ from .models import (
     StudentFeePackage,
 )
 from .services import build_draft_lines, due_date_for, generate_invoice
-from payments.models import Payment
+from payments.models import BankAccount, Payment
 from payments.services import record_manual_payment
 
 User = get_user_model()
@@ -328,6 +328,7 @@ class InvoiceApiTests(BillingApiFixtureMixin, TestCase):
         invoice.refresh_from_db()
         self.assertEqual(invoice.status, Invoice.Status.FULLY_REFUNDED)
 
+
     def test_guardian_cannot_delete_invoice(self):
         invoice = generate_invoice(self.student_a, date(2026, 9, 1))
         self.client.force_authenticate(self.guardian_user)
@@ -483,3 +484,52 @@ class InvoiceApiTests(BillingApiFixtureMixin, TestCase):
         invoice.refresh_from_db()
         self.assertEqual(invoice.adjustment_amount, Decimal("-100000"))
         self.assertEqual(invoice.total_amount, Decimal("3000000"))
+
+
+class InvoicePrintApiTests(BillingApiFixtureMixin, TestCase):
+    """Trang in/xem trước hóa đơn (`invoice_template.html`) — 2 biến thể theo status."""
+
+    def setUp(self):
+        super().setUp()
+        self.invoice = generate_invoice(self.student_a, date(2026, 9, 1))
+        self.invoice.status = Invoice.Status.ISSUED
+        self.invoice.save(update_fields=["status"])
+        account = BankAccount(
+            house=self.house_a,
+            bank_code="970436",
+            account_holder_name="NGUYEN THI LAN",
+            is_primary=True,
+        )
+        account.set_account_number("0011223348899")
+        account.save()
+
+    def test_guardian_can_print_own_child_invoice(self):
+        self.client.force_authenticate(self.guardian_user)
+        response = self.client.get(f"/api/billing/invoices/{self.invoice.pk}/print/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response["Content-Type"])
+        html = response.content.decode()
+        self.assertIn("Hóa đơn kỳ", html)
+        self.assertIn(self.invoice.qr_reference_code, html)
+        self.assertIn("img.vietqr.io", html)
+
+    def test_guardian_cannot_print_other_students_invoice(self):
+        other_invoice = generate_invoice(self.student_b, date(2026, 9, 1))
+        self.client.force_authenticate(self.guardian_user)
+        response = self.client.get(f"/api/billing/invoices/{other_invoice.pk}/print/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_paid_invoice_prints_receipt_without_qr(self):
+        record_manual_payment(
+            self.invoice, self.invoice.net_amount, method=Payment.Method.CASH, user=self.teacher_user
+        )
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+
+        self.client.force_authenticate(self.guardian_user)
+        response = self.client.get(f"/api/billing/invoices/{self.invoice.pk}/print/")
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn("Đã đóng đủ", html)
+        self.assertNotIn("img.vietqr.io", html)
+        self.assertIn("Lịch sử thanh toán", html)

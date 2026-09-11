@@ -6,6 +6,8 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.db.models.deletion import ProtectedError
+from django.http import HttpResponse
+from django.template.loader import render_to_string
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
@@ -28,7 +30,7 @@ from .serializers import (
     StudentDiscountSerializer,
     StudentFeePackageSerializer,
 )
-from .services import generate_invoice, period_start, recalculate_status
+from .services import build_invoice_print_context, generate_invoice, period_start, recalculate_status
 
 
 class CatalogModelViewSet(viewsets.ModelViewSet):
@@ -289,6 +291,21 @@ class InvoiceViewSet(
 
         invoice.refresh_from_db()
         return Response(InvoiceSerializer(invoice).data)
+
+    @action(detail=True, methods=["get"], url_path="print")
+    def print_invoice(self, request, pk=None):
+        """Trang HTML để in/lưu PDF qua trình duyệt (Ctrl+P) — dự án chưa có
+        thư viện sinh PDF phía server, xem `services.build_invoice_print_context`
+        cho ngữ cảnh dữ liệu và `templates/billing/invoice_template.html` cho
+        layout. Không override permission — cùng lý do với `vietqr` bên dưới.
+        """
+        invoice = self.get_object()
+        html = render_to_string(
+            "billing/invoice_template.html",
+            build_invoice_print_context(invoice),
+            request=request,
+        )
+        return HttpResponse(html)
 
     @action(detail=True, methods=["get"], url_path="vietqr")
     def vietqr(self, request, pk=None):

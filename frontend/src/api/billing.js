@@ -50,6 +50,9 @@ export const invoicesApi = {
   remove: (id) => api.delete(`/billing/invoices/${id}/`),
   payments: (id) => api.get(`/billing/invoices/${id}/payments/`),
   vietqr: (id) => api.get(`/billing/invoices/${id}/vietqr/`),
+  // Mở trực tiếp bằng window.open — trang HTML server-render (không phải JSON),
+  // dùng chung session cookie có sẵn của trình duyệt, không qua fetch wrapper.
+  printUrl: (id) => `/api/billing/invoices/${id}/print/`,
   recordPayment: (id, payload) => api.post(`/billing/invoices/${id}/record-payment/`, payload),
   refund: (id, payload) => api.post(`/billing/invoices/${id}/refund/`, payload),
 };

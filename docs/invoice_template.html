@@ -1,0 +1,368 @@
+{% comment %}
+  Django template — hóa đơn học phí EduFi (VictoriaSchool). Không cần build step, không cần
+  JS. Render trực tiếp bằng Django (view trả HttpResponse/render, hoặc dùng cho export PDF
+  qua WeasyPrint/wkhtmltopdf — cả hai đều chạy được HTML+CSS thuần này).
+
+  CONTEXT BACKEND CẦN TRUYỀN VÀO (context dict khi gọi render()):
+
+  invoice = {
+    "status":                str   # 'draft'|'issued'|'partially_paid'|'paid'|'fully_refunded'|'void'
+                                     # (dùng để rẽ nhánh panel/tổng kết bên dưới)
+    "qr_reference_code":     str   # vd "HP7K2M9QX4"
+    "period_display":        str   # vd "Tháng 9/2026" — backend tự format từ invoice.period
+    "due_date_display":      str   # vd "25/09/2026"
+    "house_name":             str   # vd "VictoriaSchool — Cơ sở Quận 7"
+
+    "items": [ { "name": str, "amount_display": str }, ... ]   # fee_item_name_snapshot + amount đã format
+
+    # Số Decimal thô — CHỈ dùng để {% if %} (ẩn field <= 0), KHÔNG in trực tiếp:
+    "total_amount": Decimal, "adjustment_amount": Decimal, "net_amount": Decimal,
+    "paid_amount": Decimal, "outstanding_amount": Decimal,
+
+    # Chuỗi đã format sẵn "1.234.000 đ" — dùng để in ra, xem gợi ý filter VNĐ ở cuối file:
+    "total_amount_display": str, "adjustment_amount_display": str,
+    "net_amount_display": str, "paid_amount_display": str, "outstanding_amount_display": str,
+    "adjustment_note": str,        # vd "2 con học cùng trường" — chỉ hiện nếu adjustment_amount != 0
+    "completed_date_display": str, # vd "20/09/2026" — chỉ cần khi status == "paid"
+  }
+
+  house    = { "address": str }
+  student  = { "full_name": str, "class_grade": str }
+  guardian = { "full_name": str, "relationship_type_display": str, "phone": str }
+             # = guardian có is_primary_contact=True; backend tự lọc trước khi truyền vào,
+             # template không loop qua danh sách guardians.
+
+  # Chỉ cần truyền khi invoice.status KHÔNG PHẢI "paid" (show_vietqr=false khi đã paid):
+  bank_account = { "bank_name": str, "account_holder_name": str, "account_number_last4": str } # hoặc None
+  vietqr       = { "url": str }  # hoặc None nếu house chưa có bank_account is_primary — khi đó ẩn ảnh QR
+
+  # Chỉ cần truyền khi invoice.status == "paid" và muốn hiện lịch sử thanh toán:
+  payments = [ { "date_display": str, "label": str, "amount_applied_display": str }, ... ]
+             # date_display từ payment.created_at (vd "05/09/2026"); label do backend đặt,
+             # vd "Đợt 1", "Đợt 2" — KHÔNG lộ payment_method/matched_by/recorded_by_username
+             # ra bill (thông tin nội bộ, không cần cho phụ huynh).
+
+  Field "refunded_amount"/"Đã hoàn" cố tình không có trong template này (ẩn theo yêu cầu thiết
+  kế) — nếu sau này cần hiện hoàn tiền, thêm field riêng và điều kiện {% if %} tương tự bên dưới.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hóa đơn {{ invoice.qr_reference_code }}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Be+Vietnam+Pro:wght@400;500;600&family=IBM+Plex+Mono:wght@500;700&display=swap">
+<style>
+  :root{
+    --ink:#1A1A1A;
+    --muted:#6B7280;
+    --page:#FAFAFA;
+    --surface:#FFFFFF;
+    --line:#E5E7EB;
+    --line-soft:#F0F1F2;
+
+    /* brand constants — frontend/src/theme/colors.json, fixed across themes */
+    --red:#C8102E;
+    --gold:#D4AF37;
+    --gold-soft:#F8F1DC;
+    --gold-ink:#8A6A1E;
+    --teal:#0D9488;
+
+    --st-paid:#16A34A;
+    --st-paid-soft:#E7F6EC;
+
+    /* one consistent panel treatment for both invoice states */
+    --panel-bg:#EFF8F6;
+    --panel-border:#D7EAE7;
+
+    --shadow-rgb:26,26,26;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#EDEDED; --muted:#9CA3AF; --page:#121316; --surface:#1B1D21;
+      --line:#2C2F33; --line-soft:#232629; --gold-soft:#332B18; --gold-ink:#E6C36C;
+      --st-paid-soft:#123420; --panel-bg:#18211F; --panel-border:#274943; --shadow-rgb:0,0,0;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#EDEDED; --muted:#9CA3AF; --page:#121316; --surface:#1B1D21;
+    --line:#2C2F33; --line-soft:#232629; --gold-soft:#332B18; --gold-ink:#E6C36C;
+    --st-paid-soft:#123420; --panel-bg:#18211F; --panel-border:#274943; --shadow-rgb:0,0,0;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--page); color:var(--ink);
+    font-family:"Be Vietnam Pro",ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
+  }
+  .app{padding-inline:16px; padding-block:32px 56px; max-width:820px; margin-inline:auto;}
+  h1,h2,h3{text-wrap:balance; margin:0;}
+  .num{font-variant-numeric:tabular-nums;}
+
+  .toolbar{display:flex; justify-content:flex-end; max-width:780px; margin:0 auto 14px;}
+  .print-btn{
+    font:inherit; font-family:"Space Grotesk",sans-serif; font-size:13px; font-weight:700;
+    color:var(--teal); background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:9px 18px; cursor:pointer;
+  }
+  .print-btn:hover{border-color:var(--teal);}
+  .print-btn:focus-visible{outline:2px solid var(--teal); outline-offset:2px;}
+
+  .doc{
+    max-width:780px; margin:0 auto; background:var(--surface); border:1px solid var(--line); border-radius:3px;
+    box-shadow:0 1px 2px rgba(var(--shadow-rgb),.06), 0 18px 40px -20px rgba(var(--shadow-rgb),.28);
+    overflow:hidden;
+  }
+  .doc-pad{padding:34px 38px 38px;}
+
+  .doc-header{display:flex; flex-wrap:wrap; gap:20px; justify-content:space-between; align-items:flex-start; padding-bottom:20px; border-bottom:2px solid var(--gold);}
+  .lockup{display:flex; gap:12px; align-items:flex-start;}
+  .mark{
+    flex:none; width:40px; height:40px; border-radius:9px; background:var(--red); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    font-family:"Space Grotesk",sans-serif; font-weight:800; font-size:15px; letter-spacing:.01em;
+  }
+  .app-name{font-family:"Space Grotesk",sans-serif; font-weight:700; font-size:12px; letter-spacing:.09em; text-transform:uppercase; color:var(--red);}
+  .school-name{font-family:"Space Grotesk",sans-serif; font-weight:700; font-size:18px; letter-spacing:-0.01em; margin-top:2px;}
+  .school-addr{font-size:12.5px; color:var(--muted); margin-top:3px; max-width:32ch; line-height:1.4;}
+  .doc-meta{text-align:right;}
+  .doc-title{font-family:"Space Grotesk",sans-serif; font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+  .doc-code{font-family:"IBM Plex Mono",monospace; font-size:13px; font-weight:600; margin-top:4px;}
+
+  .salutation{font-size:13.5px; margin:18px 0 0; color:var(--ink);}
+  .salutation b{font-weight:600;}
+
+  .panel{margin:20px 0 26px; border-radius:10px; padding:24px 26px; background:var(--panel-bg); border:1px solid var(--panel-border);}
+  .panel-grid{display:grid; grid-template-columns:1fr auto; gap:24px; align-items:center;}
+  .panel-label{font-family:"Space Grotesk",sans-serif; font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+  .panel-amount{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:clamp(26px,5vw,34px); color:var(--teal); margin-top:6px; line-height:1.1;}
+  .panel-sub{font-size:12.5px; color:var(--muted); margin-top:8px;}
+  .panel-due{font-size:13px; color:var(--muted); margin-top:2px;}
+  .panel-due b{color:var(--ink); font-weight:600;}
+  .panel-transfer{margin-top:16px; padding-top:16px; border-top:1px solid var(--panel-border); font-size:12.5px; color:var(--muted); line-height:1.75;}
+  .panel-transfer b{color:var(--ink); font-weight:600;}
+  .ref-chip{
+    font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:15px; letter-spacing:.03em;
+    color:var(--gold-ink); background:var(--gold-soft); border:1px solid var(--gold);
+    padding:3px 9px; border-radius:5px; display:inline-block; margin-top:4px;
+  }
+  .qr-card{background:#FFFFFF; border:1px solid var(--panel-border); border-radius:10px; padding:12px; text-align:center; width:132px;}
+  .qr-card img{width:104px; height:104px; display:block; margin:0 auto;}
+  .qr-cap{font-size:10px; color:#4B5563; margin-top:6px; line-height:1.3;}
+
+  .receipt-mark{display:flex; align-items:center; gap:14px;}
+  .receipt-icon{flex:none; width:46px; height:46px; border-radius:50%; background:var(--st-paid-soft); display:flex; align-items:center; justify-content:center;}
+  .receipt-headline{font-family:"Space Grotesk",sans-serif; font-weight:700; font-size:clamp(20px,4vw,25px); color:var(--st-paid);}
+  .receipt-sub{font-size:13px; color:var(--muted); margin-top:4px;}
+
+  .section-title{font-family:"Space Grotesk",sans-serif; font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin:0 0 12px;}
+  .info-grid{display:grid; grid-template-columns:1fr 1fr; gap:26px; margin-bottom:28px;}
+  .field-row{display:flex; flex-direction:column; gap:3px; padding:8px 0; border-bottom:1px solid var(--line-soft);}
+  .field-row:last-child{border-bottom:none;}
+  .field-label{font-size:10.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);}
+  .field-value{font-size:14px; font-weight:600;}
+
+  .table-wrap{overflow-x:auto; margin-bottom:22px;}
+  table.items{width:100%; border-collapse:collapse; font-size:13.5px;}
+  table.items th{text-align:left; font-family:"Space Grotesk",sans-serif; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding-bottom:9px; border-bottom:1px solid var(--line);}
+  table.items th.num, table.items td.num{text-align:right; font-family:"IBM Plex Mono",monospace;}
+  table.items td{padding:10px 0; border-bottom:1px solid var(--line-soft);}
+  table.items tr:last-child td{border-bottom:none;}
+
+  .history{margin:26px 0 4px; display:flex; flex-direction:column;}
+  .history-row{display:grid; grid-template-columns:auto 1fr auto; gap:14px; align-items:baseline; padding:10px 0; border-bottom:1px solid var(--line-soft); font-size:13px;}
+  .history-row:last-child{border-bottom:none;}
+  .history-date{font-family:"IBM Plex Mono",monospace; color:var(--muted); font-size:12px; white-space:nowrap;}
+  .history-desc small{display:block; color:var(--muted); font-size:11.5px; margin-top:2px;}
+  .history-amount{font-family:"IBM Plex Mono",monospace; font-weight:600; color:var(--st-paid); white-space:nowrap;}
+
+  .summary{margin-left:auto; width:100%; max-width:320px; display:flex; flex-direction:column; gap:2px;}
+  .summary-row{display:flex; justify-content:space-between; gap:12px; padding:6px 0; font-size:13px;}
+  .summary-row .k{color:var(--muted);}
+  .summary-row .v{font-family:"IBM Plex Mono",monospace; font-weight:500;}
+  .summary-note{font-size:11.5px; color:var(--muted); font-style:italic; text-align:right; margin-top:-2px;}
+  .summary-div{border-top:1px solid var(--line); margin:8px 0;}
+  .summary-total{display:flex; justify-content:space-between; align-items:baseline; gap:12px; padding-top:6px;}
+  .summary-total .k{font-family:"Space Grotesk",sans-serif; font-weight:700; font-size:14px;}
+  .summary-total .v{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:21px; color:var(--teal);}
+
+  @media (max-width:640px){
+    .panel-grid{grid-template-columns:1fr; text-align:left;}
+    .qr-card{width:100%; max-width:132px;}
+    .info-grid{grid-template-columns:1fr;}
+    .doc-meta{text-align:left;}
+    .doc-header{flex-direction:column;}
+  }
+
+  @media print{
+    :root{
+      --ink:#1A1A1A; --muted:#6B7280; --page:#FFFFFF; --surface:#FFFFFF;
+      --line:#E5E7EB; --line-soft:#F0F1F2; --panel-bg:#FFFFFF; --panel-border:#E5E7EB;
+    }
+    body{background:#fff;}
+    .toolbar{display:none;}
+    .app{padding:0; max-width:none;}
+    .doc{box-shadow:none; border:none; max-width:none;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="toolbar">
+    <button class="print-btn" type="button" onclick="window.print()">In hóa đơn</button>
+  </div>
+
+  <article class="doc">
+    <div class="doc-pad">
+
+      <div class="doc-header">
+        <div class="lockup">
+          <div class="mark">EF</div>
+          <div>
+            <div class="app-name">EduFi</div>
+            <div class="school-name">{{ invoice.house_name }}</div>
+            <div class="school-addr">{{ house.address }}</div>
+          </div>
+        </div>
+        <div class="doc-meta">
+          <div class="doc-title">Hóa đơn kỳ · {{ invoice.period_display }}</div>
+          <div class="doc-code">#{{ invoice.qr_reference_code }}</div>
+        </div>
+      </div>
+
+      {% if guardian %}
+      <p class="salutation">Kính gửi: <b>Anh/Chị {{ guardian.full_name }}</b> ({{ guardian.relationship_type_display }} của {{ student.full_name }}, lớp {{ student.class_grade }})</p>
+      {% endif %}
+
+      {% if invoice.status == "paid" %}
+        {# ============ after_payment — status=paid, show_vietqr luôn false ============ #}
+        <div class="panel">
+          <div class="panel-grid">
+            <div class="receipt-mark">
+              <div class="receipt-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M5 12.5L10 17.5L19 7.5" stroke="#16A34A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div>
+                <div class="receipt-headline">Đã đóng đủ</div>
+                <div class="receipt-sub">Hoàn tất ngày {{ invoice.completed_date_display }}</div>
+              </div>
+            </div>
+            <div>
+              <div class="panel-label" style="text-align:right;">Mã tham chiếu</div>
+              <div style="text-align:right;"><div class="ref-chip">{{ invoice.qr_reference_code }}</div></div>
+            </div>
+          </div>
+        </div>
+      {% else %}
+        {# ============ before_payment — status in draft/issued/partially_paid ============ #}
+        <div class="panel">
+          <div class="panel-grid">
+            <div>
+              <div class="panel-label">Còn lại cần đóng</div>
+              <div class="panel-amount num">{{ invoice.outstanding_amount_display }}</div>
+              {% if invoice.paid_amount %}
+              <div class="panel-sub">Đã đóng {{ invoice.paid_amount_display }} / Tổng {{ invoice.net_amount_display }}</div>
+              {% endif %}
+              <div class="panel-due">Hạn đóng: <b>{{ invoice.due_date_display }}</b></div>
+              {% if bank_account %}
+              <div class="panel-transfer">
+                Chuyển khoản tới: <b>{{ bank_account.bank_name }}</b> — Chủ TK: <b>{{ bank_account.account_holder_name }}</b><br>
+                Số TK: <b style="white-space:nowrap;">•••• {{ bank_account.account_number_last4 }}</b><br>
+                Nội dung chuyển khoản — giữ nguyên mã này:
+                <div class="ref-chip">{{ invoice.qr_reference_code }}</div>
+              </div>
+              {% endif %}
+            </div>
+            {% if vietqr.url %}
+            <div class="qr-card">
+              <img src="{{ vietqr.url }}" alt="Mã QR chuyển khoản">
+              <div class="qr-cap">Quét để chuyển khoản nhanh</div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="section-title">Học sinh &amp; phụ huynh</div>
+      <div class="info-grid">
+        <div>
+          <div class="field-row"><span class="field-label">Học sinh</span><span class="field-value">{{ student.full_name }}</span></div>
+          <div class="field-row"><span class="field-label">Lớp</span><span class="field-value">{{ student.class_grade }}</span></div>
+        </div>
+        {% if guardian %}
+        <div>
+          <div class="field-row"><span class="field-label">Phụ huynh</span><span class="field-value">{{ guardian.full_name }}</span></div>
+          <div class="field-row"><span class="field-label">Quan hệ · Điện thoại</span><span class="field-value">{{ guardian.relationship_type_display }} · {{ guardian.phone }}</span></div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="section-title">Các khoản thu</div>
+      <div class="table-wrap">
+        <table class="items">
+          <thead><tr><th>Khoản thu</th><th class="num">Số tiền</th></tr></thead>
+          <tbody>
+            {% for item in invoice.items %}
+            <tr><td>{{ item.name }}</td><td class="num">{{ item.amount_display }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if invoice.status == "paid" and payments %}
+      <div class="section-title">Lịch sử thanh toán</div>
+      <div class="history">
+        {% for p in payments %}
+        <div class="history-row">
+          <span class="history-date">{{ p.date_display }}</span>
+          <span class="history-desc">Chuyển khoản ngân hàng <small>{{ p.label }}</small></span>
+          <span class="history-amount num">+{{ p.amount_applied_display }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="summary">
+        <div class="summary-row"><span class="k">Tổng cộng</span><span class="v num">{{ invoice.total_amount_display }}</span></div>
+        {% if invoice.adjustment_amount %}
+        <div class="summary-row"><span class="k">Giảm giá</span><span class="v num">{{ invoice.adjustment_amount_display }}</span></div>
+        {% if invoice.adjustment_note %}<div class="summary-note">{{ invoice.adjustment_note }}</div>{% endif %}
+        {% endif %}
+        <div class="summary-div"></div>
+        <div class="summary-row"><span class="k">Tổng cần đóng</span><span class="v num">{{ invoice.net_amount_display }}</span></div>
+        {% if invoice.status != "paid" and invoice.paid_amount %}
+        <div class="summary-row"><span class="k">Đã đóng</span><span class="v num">{{ invoice.paid_amount_display }}</span></div>
+        {% endif %}
+
+        {% if invoice.status == "paid" %}
+          <div class="summary-div"></div>
+          <div class="summary-total"><span class="k">Đã đóng</span><span class="v num">{{ invoice.paid_amount_display }}</span></div>
+        {% elif invoice.outstanding_amount %}
+          <div class="summary-div"></div>
+          <div class="summary-total"><span class="k">Còn lại cần đóng</span><span class="v num">{{ invoice.outstanding_amount_display }}</span></div>
+        {% endif %}
+      </div>
+
+    </div>
+  </article>
+</div>
+</body>
+</html>
+{% comment %}
+  Gợi ý filter format tiền VNĐ (Django mặc định không có dấu chấm ngăn cách hàng nghìn kiểu
+  VN — intcomma của django.contrib.humanize cho ra "4,600,000" chứ không phải "4.600.000"):
+
+    # app/templatetags/vn_format.py
+    from django import template
+    register = template.Library()
+
+    @register.filter
+    def vnd(value):
+        try:
+            return f"{int(value):,}".replace(",", ".") + " đ"
+        except (TypeError, ValueError):
+            return ""
+
+  Dùng trong view/serializer để tạo sẵn *_display trước khi đưa vào context, thay vì gọi
+  filter ngay trong template — giữ template chỉ lo hiển thị, không lo format.
+{% endcomment %}

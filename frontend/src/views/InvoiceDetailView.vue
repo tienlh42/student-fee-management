@@ -176,6 +176,10 @@ function confirmCreditExcess() {
   });
 }
 
+function printInvoice() {
+  window.open(invoicesApi.printUrl(invoice.value.id), "_blank");
+}
+
 function confirmVoid() {
   confirm.require({
     header: "Hủy hóa đơn",
@@ -271,6 +275,13 @@ onMounted(async () => {
         </span>
 
         <div class="ml-auto flex flex-wrap gap-2">
+          <Button
+            label="In hóa đơn"
+            icon="pi pi-print"
+            severity="secondary"
+            outlined
+            @click="printInvoice"
+          />
           <Button
             v-if="invoice.status !== 'void' && Number(invoice.outstanding_amount) > 0"
             label="Sinh QR thanh toán"

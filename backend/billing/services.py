@@ -14,7 +14,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import Q
 
-from people.models import Student
+from people.models import Student, StudentGuardian
 
 from .models import (
     FeePackageItem,
@@ -181,3 +181,36 @@ def recalculate_status(invoice: Invoice) -> Invoice:
 
     invoice.save(update_fields=["status", "updated_at"])
     return invoice
+
+
+def build_invoice_print_context(invoice: Invoice) -> dict:
+    """Dữ liệu cho `billing/invoice_template.html` — trang in/lưu PDF qua trình
+    duyệt (chưa có thư viện PDF trong dự án, xem `billing.views.print_invoice`).
+
+    Template tự rẽ nhánh theo `is_paid`: đã thanh toán đủ -> biên nhận (liệt
+    kê các lần thu, không QR); còn lại -> hóa đơn (kèm QR nếu house đã cấu
+    hình bank account và còn phải thu — `build_vietqr_url` tự quyết việc đó).
+    """
+    # Import trễ để tránh vòng lặp: payments.services đã import billing.services.
+    from payments.services import build_vietqr_url
+
+    invoice = (
+        Invoice.objects.select_related("student__person", "house")
+        .prefetch_related("items", "payments", "refunds")
+        .get(pk=invoice.pk)
+    )
+    primary_guardian = (
+        StudentGuardian.objects.filter(student=invoice.student, is_primary_contact=True)
+        .select_related("guardian__person")
+        .first()
+    )
+    return {
+        "invoice": invoice,
+        "is_paid": invoice.status == Invoice.Status.PAID,
+        "items": invoice.items.all(),
+        "payments": invoice.payments.order_by("created_at"),
+        "refunds": invoice.refunds.all(),
+        "vietqr_url": build_vietqr_url(invoice),
+        "bank_account": invoice.house.bank_accounts.filter(is_primary=True).first(),
+        "primary_guardian": primary_guardian,
+    }
