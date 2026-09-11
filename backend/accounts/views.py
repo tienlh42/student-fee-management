@@ -6,6 +6,8 @@ với request đã đăng nhập. Login là request *chưa* đăng nhập nên p
 """
 
 from django.contrib.auth import login as django_login, logout as django_logout
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from rest_framework import status, viewsets
@@ -15,10 +17,14 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from notifications.models import OtpCode
+from notifications.otp import request_otp, verify_otp
+
 from .models import User
 from .permissions import CanManageUsers
 from .serializers import (
     CurrentUserSerializer,
+    ForgotPasswordLookupSerializer,
     LoginSerializer,
     ProfileSerializer,
     UserSerializer,
@@ -43,6 +49,64 @@ class LogoutView(APIView):
 
     def post(self, request):
         django_logout(request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class ForgotPasswordRequestView(APIView):
+    """Bước 1 quên mật khẩu: khớp username+email rồi gửi OTP qua email.
+
+    Request chưa đăng nhập nên cần tự gắn `csrf_protect`, giống `LoginView`.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ForgotPasswordLookupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data["user"]
+
+        try:
+            request_otp(user, purpose=OtpCode.Purpose.RESET_PASSWORD)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@method_decorator(csrf_protect, name="dispatch")
+class ForgotPasswordConfirmView(APIView):
+    """Bước 2: xác thực OTP rồi đặt mật khẩu mới — vẫn chưa cần đăng nhập.
+
+    Gộp xác thực OTP + đổi mật khẩu trong một request duy nhất, không lưu
+    trạng thái "đã xác thực" tạm ở giữa hai bước — đơn giản hơn và không hở
+    thêm đường tấn công (VD: xác thực xong rồi bỏ dở, để trạng thái treo).
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ForgotPasswordLookupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data["user"]
+        code = request.data.get("code") or ""
+        new_password = request.data.get("new_password") or ""
+
+        # Kiểm tra mật khẩu mới TRƯỚC khi verify — verify_otp tiêu luôn mã nếu
+        # đúng, nên nếu để sau, người nhập đúng mã nhưng mật khẩu yếu sẽ bị đốt
+        # mất mã dù chưa đổi được gì, phải xin gửi lại mã mới cho lỗi không
+        # liên quan tới mã.
+        try:
+            validate_password(new_password, user=user)
+        except DjangoValidationError as exc:
+            return Response({"new_password": exc.messages}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            verify_otp(user, purpose=OtpCode.Purpose.RESET_PASSWORD, code=code)
+        except ValueError as exc:
+            return Response({"code": [str(exc)]}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

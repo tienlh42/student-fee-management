@@ -7,7 +7,7 @@ from django.utils.crypto import get_random_string
 from rest_framework import serializers
 
 from .models import User
-from .services import role_for, save_user_role
+from .services import email_taken, role_for, save_user_role
 
 
 class LoginSerializer(serializers.Serializer):
@@ -32,6 +32,29 @@ class LoginSerializer(serializers.Serializer):
             self.fail("invalid")
         if not user.is_active:
             self.fail("inactive")
+        attrs["user"] = user
+        return attrs
+
+
+class ForgotPasswordLookupSerializer(serializers.Serializer):
+    """Xác nhận username + email khớp cùng một tài khoản — dùng chung cho cả
+    bước gửi OTP và bước xác thực/đổi mật khẩu. Gộp lỗi "sai username" và "sai
+    email" thành một thông báo, giống `LoginSerializer`, để không lộ tài khoản
+    nào tồn tại."""
+
+    username = serializers.CharField(write_only=True)
+    email = serializers.EmailField(write_only=True)
+
+    default_error_messages = {
+        "not_found": "Không tìm thấy tài khoản khớp với thông tin đã nhập.",
+    }
+
+    def validate(self, attrs):
+        user = User.objects.filter(
+            username=attrs["username"], email__iexact=attrs["email"], is_active=True
+        ).first()
+        if user is None:
+            self.fail("not_found")
         attrs["user"] = user
         return attrs
 
@@ -103,6 +126,11 @@ class ProfileSerializer(serializers.Serializer):
     person = serializers.SerializerMethodField()
     houses = serializers.SerializerMethodField()
     role = serializers.SerializerMethodField()
+
+    def validate_account_email(self, value):
+        if email_taken(value, exclude_user_id=self.instance.pk):
+            raise serializers.ValidationError("Email này đã được dùng cho tài khoản khác.")
+        return value
 
     def get_person(self, user) -> dict | None:
         from people.serializers import PersonSerializer
@@ -223,6 +251,11 @@ class UserSerializer(serializers.ModelSerializer):
     def validate_password(self, value):
         if value:
             validate_password(value)
+        return value
+
+    def validate_email(self, value):
+        if email_taken(value, exclude_user_id=self.instance.pk if self.instance else None):
+            raise serializers.ValidationError("Email này đã được dùng cho tài khoản khác.")
         return value
 
     @transaction.atomic

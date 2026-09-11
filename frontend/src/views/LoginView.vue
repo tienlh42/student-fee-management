@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import Button from "primevue/button";
 import Card from "primevue/card";
@@ -83,6 +83,13 @@ async function submit() {
             :loading="auth.pending"
             :disabled="!username || !password"
           />
+
+          <RouterLink
+            to="/forgot-password"
+            class="text-sm text-center text-surface-500 hover:underline"
+          >
+            Quên mật khẩu?
+          </RouterLink>
         </form>
       </template>
     </Card>

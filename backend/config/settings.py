@@ -130,6 +130,17 @@ CACHES = {
     }
 }
 
+# Email: Gmail cá nhân qua SMTP (gửi thông báo hệ thống + OTP).
+# App Password (không phải mật khẩu Gmail thật) — tạo tại
+# https://myaccount.google.com/apppasswords, cần bật xác thực 2 bước trước.
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = env("GMAIL_USER", default="")
+EMAIL_HOST_PASSWORD = env("GMAIL_APP_PASSWORD", default="")
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True

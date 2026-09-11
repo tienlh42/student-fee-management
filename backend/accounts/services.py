@@ -8,6 +8,22 @@ from dataclasses import dataclass
 
 from django.db import transaction
 
+from .models import User
+
+
+def email_taken(email: str, *, exclude_user_id: int | None = None) -> bool:
+    """Email đã dùng cho tài khoản khác chưa — so sánh không phân biệt hoa/thường.
+
+    Email rỗng không tính trùng: nhiều tài khoản (đặc biệt giáo viên/phụ huynh
+    tạo thủ công) chưa có email, không thể coi các chuỗi rỗng đó là trùng nhau.
+    """
+    if not email:
+        return False
+    qs = User.objects.filter(email__iexact=email)
+    if exclude_user_id is not None:
+        qs = qs.exclude(pk=exclude_user_id)
+    return qs.exists()
+
 
 @dataclass(frozen=True)
 class Role:

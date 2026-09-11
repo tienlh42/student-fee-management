@@ -15,6 +15,12 @@ const routes = [
     component: () => import("../views/LoginView.vue"),
   },
   {
+    path: "/forgot-password",
+    name: "forgot-password",
+    meta: { title: "Quên mật khẩu", public: true, blank: true },
+    component: () => import("../views/ForgotPasswordView.vue"),
+  },
+  {
     path: "/",
     name: "dashboard",
     meta: { title: "Tổng quan" },

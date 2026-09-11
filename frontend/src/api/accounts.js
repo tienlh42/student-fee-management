@@ -15,6 +15,9 @@ export const accountsApi = {
   profile: () => api.get("/accounts/profile/"),
   updateProfile: (payload) => api.patch("/accounts/profile/", payload),
   changePassword: (payload) => api.post("/accounts/change-password/", payload),
+  // Quên mật khẩu — chưa đăng nhập, xem accounts.views.ForgotPassword*View.
+  requestPasswordReset: (payload) => api.post("/accounts/forgot-password/request/", payload),
+  confirmPasswordReset: (payload) => api.post("/accounts/forgot-password/confirm/", payload),
 };
 
 export const housesApi = {
