@@ -1,0 +1,309 @@
+{
+  "$comment": "Tài liệu tham chiếu cho việc dựng template hóa đơn (in PDF + HTML email). Tự sinh từ codebase student-fee-management ngày 2026-09-11. Chưa có code render PDF/email nào trong repo — đây là input để xây từ đầu. Có 2 template: before_payment (hóa đơn/nhắc nộp) và after_payment (biên nhận đã thanh toán).",
+  "generated_at": "2026-09-11",
+  "app_name": "EduFi — Quản lý học sinh & học phí",
+
+  "brand": {
+    "theme_color": "#C8102E",
+    "logo_assets": {
+      "note": "SVG, path tương đối trong repo — dùng cho bản in/email cần nhúng ảnh (email nên convert sang PNG hoặc base64 data URI vì nhiều mail client chặn SVG).",
+      "red": "frontend/src/assets/brand/logo-red.svg",
+      "white": "frontend/src/assets/brand/logo-white.svg",
+      "mono": "frontend/src/assets/brand/logo-mono.svg (dùng currentColor, cần set màu khi nhúng tĩnh)"
+    },
+    "favicon": "frontend/public/favicon.ico (+ các size khác trong frontend/public/)"
+  },
+
+  "typography": {
+    "$comment": "Font tải qua Google Fonts <link>, không self-host, không có @fontsource. Email HTML nên có fallback vì nhiều mail client (Outlook desktop) không load Google Fonts.",
+    "display": {
+      "family": "Space Grotesk",
+      "weights": [500, 700, 800],
+      "usage": "Logo, tiêu đề lớn (tên trường, 'HÓA ĐƠN', 'BIÊN NHẬN')",
+      "google_fonts_url": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&display=swap",
+      "css_fallback_stack": "\"Space Grotesk\", ui-sans-serif, system-ui, sans-serif"
+    },
+    "body": {
+      "family": "Be Vietnam Pro",
+      "weights": [400, 500, 600],
+      "usage": "Nội dung, nhãn, địa chỉ — có dấu tiếng Việt đầy đủ",
+      "google_fonts_url": "https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&display=swap",
+      "css_fallback_stack": "\"Be Vietnam Pro\", ui-sans-serif, system-ui, \"Segoe UI\", Roboto, sans-serif"
+    },
+    "numeric": {
+      "family": "IBM Plex Mono",
+      "weights": [500, 700],
+      "usage": "Số tiền, mã hóa đơn/mã tham chiếu, số tài khoản — tabular figures",
+      "google_fonts_url": "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;700&display=swap",
+      "css_fallback_stack": "\"IBM Plex Mono\", ui-monospace, monospace"
+    }
+  },
+
+  "colors": {
+    "$source": "frontend/src/theme/colors.json + colors.css (nguồn brand duy nhất của dự án)",
+    "brand": {
+      "red": "#C8102E",
+      "red_hover": "#9E0B22",
+      "gold": "#D4AF37",
+      "gold_hover": "#B8941F",
+      "white": "#FFFFFF",
+      "teal": "#0D9488",
+      "teal_hover": "#0F766E"
+    },
+    "text": {
+      "primary": "#1A1A1A",
+      "secondary": "#6B7280"
+    },
+    "status": {
+      "$comment": "Token có sẵn trong CSS nhưng hiện KHÔNG được dùng trực tiếp trong UI (UI dùng severity trừu tượng của PrimeVue, xem status_severity_map bên dưới). Vẫn là màu status chính thức của brand, phù hợp để dùng trong template in/email.",
+      "paid": "#16A34A",
+      "pending": "#F59E0B",
+      "overdue": "#E11D48"
+    },
+    "surface": {
+      "base": "#FFFFFF",
+      "muted": "#FAFAFA",
+      "border": "#E5E7EB"
+    },
+    "button": {
+      "primary": { "background": "#0D9488", "text": "#FFFFFF" },
+      "secondary": { "background": "#FFFFFF", "border": "#0D9488", "text": "#0D9488" }
+    },
+    "primevue_primary_scale": {
+      "$comment": "PrimeVue Aura preset, primary derived từ brand.teal qua color-mix() — dùng nếu muốn khớp đúng UI web.",
+      "500": "#0D9488",
+      "600": "#0F766E"
+    }
+  },
+
+  "status_severity_map": {
+    "$comment": "UI web tô màu Tag theo severity trừu tượng (PrimeVue tự render green/orange/blue/gray/red), KHÔNG map thẳng sang hex. Với template in/email, khuyến nghị dùng colors.status ở trên cho các state chính, các severity còn lại dùng text_secondary/border xám trung tính.",
+    "invoice_status_to_severity": {
+      "draft": "secondary",
+      "issued": "info",
+      "partially_paid": "warn",
+      "paid": "success",
+      "fully_refunded": "contrast",
+      "void": "danger"
+    },
+    "recommended_hex_for_print": {
+      "draft": "#6B7280",
+      "issued": "#0D9488",
+      "partially_paid": "#F59E0B",
+      "paid": "#16A34A",
+      "fully_refunded": "#6B7280",
+      "void": "#E11D48"
+    }
+  },
+
+  "data_model": {
+    "$comment": "Field lấy từ InvoiceSerializer (API thật) + model gốc. student_name/house_name đã là chuỗi phẳng sẵn trong response, không cần join thêm.",
+
+    "invoice": {
+      "source": "billing.serializers.InvoiceSerializer (GET /api/billing/invoices/{id}/)",
+      "fields": {
+        "id": "int",
+        "house": "int (FK id)",
+        "house_name": "string — tên cơ sở",
+        "student": "int (FK id)",
+        "student_name": "string — từ student.person.full_name",
+        "period": "date (yyyy-mm-01) — kỳ hóa đơn, hiển thị dạng 'Tháng M/YYYY'",
+        "total_amount": "decimal — tổng tiền gốc từ các items",
+        "adjustment_amount": "decimal — điều chỉnh (+/-), vd thu thêm/giảm trừ",
+        "adjustment_note": "string, có thể rỗng",
+        "net_amount": "decimal (computed) = total_amount + adjustment_amount — SỐ TIỀN PHẢI THU THỰC TẾ",
+        "paid_amount": "decimal (computed) = tổng Payment.amount_applied",
+        "refunded_amount": "decimal (computed) = tổng Refund.amount",
+        "net_paid": "decimal (computed) = paid_amount - refunded_amount",
+        "outstanding_amount": "decimal (computed) = net_amount - net_paid — CÒN PHẢI THU (0 nghĩa là đã thanh toán đủ)",
+        "status": "enum, xem invoice_status_choices",
+        "status_display": "string tiếng Việt tương ứng status",
+        "cancel_reason": "string, chỉ có khi status=void",
+        "due_date": "date — hạn nộp",
+        "qr_reference_code": "string, unique, pattern HP[A-Z0-9]{8} — nội dung chuyển khoản để đối soát tự động",
+        "items": "InvoiceItem[] — xem invoice_item bên dưới"
+      },
+      "invoice_status_choices": [
+        { "value": "draft", "label": "Nháp" },
+        { "value": "issued", "label": "Đã phát hành" },
+        { "value": "partially_paid", "label": "Thanh toán một phần" },
+        { "value": "paid", "label": "Đã thanh toán" },
+        { "value": "fully_refunded", "label": "Đã hoàn đủ" },
+        { "value": "void", "label": "Đã hủy" }
+      ]
+    },
+
+    "invoice_item": {
+      "source": "billing.serializers.InvoiceItemSerializer (nested trong invoice.items)",
+      "fields": {
+        "id": "int",
+        "fee_item": "int (FK id), có thể null nếu fee_item gốc đã bị xoá",
+        "fee_item_name_snapshot": "string — TÊN DÙNG ĐỂ HIỂN THỊ (đóng băng tại thời điểm phát hành, không đổi dù fee_item gốc đổi tên sau này)",
+        "amount": "decimal"
+      },
+      "fee_item_category_choices_for_reference": [
+        { "value": "tuition", "label": "Học phí" },
+        { "value": "meal", "label": "Tiền ăn" },
+        { "value": "transport", "label": "Phí xe" },
+        { "value": "other", "label": "Khác" }
+      ]
+    },
+
+    "payment": {
+      "source": "payments.serializers.PaymentSerializer — CẦN GỌI RIÊNG /api/payments/payments/?invoice={id}, không nằm trong InvoiceSerializer",
+      "usage": "Bắt buộc cho template after_payment (biên nhận) — liệt kê các khoản đã thu để tạo hóa đơn",
+      "fields": {
+        "id": "int",
+        "invoice": "int (FK id)",
+        "invoice_reference": "string = invoice.qr_reference_code",
+        "student_name": "string",
+        "amount_applied": "decimal — số tiền của lần thu này",
+        "payment_method": "enum: bank_transfer | cash | other",
+        "payment_method_display": "string tiếng Việt (Chuyển khoản/Tiền mặt/Khác)",
+        "matched_by": "enum: auto | manual",
+        "matched_by_display": "string tiếng Việt (Tự động/Thủ công)",
+        "recorded_by_username": "string, rỗng nếu khớp tự động",
+        "note": "string, có thể rỗng",
+        "created_at": "datetime — thời điểm ghi nhận"
+      }
+    },
+
+    "refund": {
+      "source": "payments.serializers.RefundSerializer — CẦN GỌI RIÊNG /api/payments/refunds/?invoice={id}",
+      "usage": "Chỉ cần khi invoice có refunded_amount > 0 (bất kể template nào)",
+      "fields": {
+        "amount": "decimal",
+        "method": "enum: bank_transfer | cash | credit",
+        "method_display": "string tiếng Việt",
+        "reason": "string, có thể rỗng",
+        "refunded_at": "datetime",
+        "refunded_by_username": "string"
+      }
+    },
+
+    "house": {
+      "source": "tenancy.serializers.HouseSerializer",
+      "fields": {
+        "name": "string — tên cơ sở",
+        "address": "string, có thể rỗng — ĐỊA CHỈ, dùng làm địa chỉ phát hành trên hóa đơn"
+      },
+      "note": "House KHÔNG có field logo/điện thoại/email liên hệ trong DB — nếu template cần các thông tin này phải lấy từ brand assets tĩnh (frontend/src/assets/brand) hoặc bổ sung field mới, không có sẵn."
+    },
+
+    "student": {
+      "source": "people.serializers.StudentSerializer",
+      "fields_relevant_to_invoice": {
+        "full_name": "string",
+        "phone": "string, từ person.phone",
+        "house_name": "string",
+        "class_grade": "string",
+        "credit_balance": "decimal — số dư credit (từ hoàn tiền dạng giữ lại), có thể hiển thị nếu >0",
+        "guardians": "GuardianBrief[] — xem bên dưới"
+      }
+    },
+
+    "guardian_brief": {
+      "source": "nested trong StudentSerializer.guardians (people.serializers.GuardianBriefSerializer)",
+      "fields": {
+        "full_name": "string",
+        "phone": "string",
+        "relationship_type": "enum: mother | father | grandparent | sibling | other",
+        "relationship_type_display": "string tiếng Việt",
+        "is_primary_contact": "bool — dùng làm 'Kính gửi:' chính trên hóa đơn nếu true, ưu tiên người này"
+      }
+    },
+
+    "bank_account": {
+      "source": "payments.serializers.BankAccountSerializer — CẦN GỌI RIÊNG (superuser only qua /api/payments/bank-accounts/), hoặc lấy qua invoice vietqr action (xem vietqr.api_response)",
+      "fields": {
+        "bank_code": "string, mã BIN Napas",
+        "bank_name": "string — tên hiển thị ngân hàng (vd 'Vietcombank')",
+        "account_holder_name": "string",
+        "account_number_last4": "string, 4 số cuối — SỐ ĐẦY ĐỦ KHÔNG BAO GIỜ lộ qua API thường, chỉ qua action reveal (ghi log)",
+        "is_primary": "bool — chỉ tài khoản is_primary=true của house được dùng để sinh VietQR"
+      }
+    }
+  },
+
+  "vietqr": {
+    "$comment": "Chỉ áp dụng cho template before_payment. build_vietqr_url() trả None nếu house chưa có bank_account nào is_primary=true, HOẶC invoice.outstanding_amount <= 0 (đã thanh toán đủ) — tức là KHÔNG BAO GIỜ hiện QR trên biên nhận đã thanh toán.",
+    "api_endpoint": "GET /api/billing/invoices/{id}/vietqr/",
+    "api_response_fields": {
+      "url": "string|null — link ảnh QR, dùng trực tiếp làm <img src>",
+      "amount": "decimal — outstanding_amount tại thời điểm gọi",
+      "reference_code": "string = qr_reference_code",
+      "bank_name": "string, rỗng nếu chưa cấu hình bank account",
+      "account_holder_name": "string, rỗng nếu chưa cấu hình",
+      "account_number_last4": "string, rỗng nếu chưa cấu hình"
+    },
+    "image_url_pattern": "https://img.vietqr.io/image/{bank_code}-{account_number_full}-compact2.png?amount={int_amount}&addInfo={url_encoded_reference_code}&accountName={url_encoded_unaccented_uppercase_holder_name}",
+    "notes": [
+      "amount trong URL là số nguyên (int), không có phần thập phân.",
+      "accountName bị bỏ dấu (NFD strip) và viết HOA — VietQR yêu cầu tên chủ tài khoản không dấu.",
+      "addInfo chính là qr_reference_code, dùng để đối soát tự động khi tiền về qua webhook.",
+      "Full account_number chỉ dùng phía backend để build URL — frontend/template không bao giờ tự có số tài khoản đầy đủ, phải dùng field 'url' đã build sẵn từ endpoint vietqr, không tự ghép chuỗi."
+    ]
+  },
+
+  "templates": {
+    "before_payment": {
+      "display_name_vi": "Hóa đơn / Thông báo thu học phí",
+      "purpose": "Gửi trước hoặc khi mới phát hành, để phụ huynh biết số tiền cần đóng và cách thanh toán (quét QR). Cũng dùng lại khi đã đóng một phần (partially_paid) để nhắc phần còn thiếu.",
+      "applicable_invoice_status": ["draft", "issued", "partially_paid"],
+      "show_vietqr": true,
+      "required_fields": [
+        "house.name", "house.address",
+        "student.full_name", "student.class_grade",
+        "invoice.period", "invoice.due_date", "invoice.qr_reference_code",
+        "invoice.items[].fee_item_name_snapshot", "invoice.items[].amount",
+        "invoice.total_amount", "invoice.adjustment_amount (nếu khác 0, kèm adjustment_note)",
+        "invoice.net_amount", "invoice.outstanding_amount",
+        "vietqr.url (nếu không null)", "bank_account.bank_name", "bank_account.account_holder_name", "bank_account.account_number_last4"
+      ],
+      "optional_fields": [
+        "guardian_brief (is_primary_contact=true) — dòng 'Kính gửi:'",
+        "invoice.status_display — badge trạng thái, dùng recommended_hex_for_print",
+        "invoice.paid_amount — nếu partially_paid, hiển thị 'Đã đóng: X / còn lại: Y'"
+      ],
+      "layout_notes": [
+        "Tiêu đề dùng font display (Space Grotesk), số tiền dùng font numeric (IBM Plex Mono).",
+        "Badge trạng thái: partially_paid dùng màu status.pending (#F59E0B), issued dùng brand.teal.",
+        "QR đặt nổi bật (góc phải hoặc dưới bảng chi tiết), kèm chú thích mã tham chiếu (qr_reference_code) để đối chiếu thủ công nếu quét lỗi.",
+        "Nếu vietqr.url = null (chưa cấu hình bank account), ẩn toàn bộ khối QR, chỉ hiện thông tin liên hệ để hỏi cách nộp."
+      ]
+    },
+
+    "after_payment": {
+      "display_name_vi": "Biên nhận đã thanh toán",
+      "purpose": "Xác nhận đã thu đủ tiền — gửi ngay sau khi invoice chuyển sang status=paid (net_paid >= net_amount, outstanding_amount = 0).",
+      "applicable_invoice_status": ["paid"],
+      "show_vietqr": false,
+      "required_fields": [
+        "house.name", "house.address",
+        "student.full_name", "student.class_grade",
+        "invoice.period", "invoice.qr_reference_code (dùng như số biên nhận)",
+        "invoice.items[].fee_item_name_snapshot", "invoice.items[].amount",
+        "invoice.net_amount",
+        "payment[] — danh sách các lần thu đã khớp vào invoice này: amount_applied, payment_method_display, created_at",
+        "invoice.status_display"
+      ],
+      "optional_fields": [
+        "refund[] — chỉ hiện nếu invoice.refunded_amount > 0 (đã hoàn một phần nhưng vẫn đủ paid), hiển thị khoản đã hoàn kèm lý do",
+        "guardian_brief (is_primary_contact=true)",
+        "recorded_by_username của payment cuối cùng — 'Người thu' (ẩn nếu matched_by=auto)"
+      ],
+      "layout_notes": [
+        "Badge trạng thái dùng màu status.paid (#16A34A), có thể thêm icon dấu tick (✓) cạnh tiêu đề.",
+        "KHÔNG hiển thị khối VietQR/hướng dẫn chuyển khoản — build_vietqr_url() luôn trả None khi outstanding_amount=0, tài liệu này chỉ xác nhận lại chủ đích thiết kế.",
+        "Nếu có nhiều payment (nhiều đợt đóng), liệt kê dạng bảng theo created_at tăng dần."
+      ]
+    },
+
+    "not_covered_by_either_template": {
+      "$comment": "Các status invoice còn lại — cần quyết định riêng, không nằm trong 2 template được yêu cầu.",
+      "draft": "Nháp nội bộ, thường chưa gửi ra ngoài — không cần template gửi phụ huynh.",
+      "fully_refunded": "Đã hoàn hết tiền — có thể cần một template 'thông báo hoàn tiền' riêng, khác cấu trúc after_payment.",
+      "void": "Đã hủy — có cancel_reason, nếu cần thông báo huỷ thì cũng là template riêng."
+    }
+  }
+}
